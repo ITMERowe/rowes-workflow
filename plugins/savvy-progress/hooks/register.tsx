@@ -2129,18 +2129,19 @@ export const register: Register = (on, options) => {
       cardRects = rects
       // Every row sits in the absolute overlay, so all of them must size the grid or they are clipped.
       const contentH = headerH + row2H + TOOLS_H + 8
-      // A filled pane is parked (see paneParked): two rows of slack, the content one row down.
-      paneParked = fill
+      // A pane with a card to scroll is parked (see paneParked): two rows of slack, the content one row down.
+      // With nothing to scroll it fits its window exactly, so the desktop shows no scrollbar.
+      paneParked = fill && rects.some(r => r.max > 0)
       paneRow = e.props.scroll?.offset ?? paneRow
       const gridH = fill ? paneH + 3 * ROW_PX : Math.max(contentH, paneH)
       return (
-        <Box flexDirection="column" height={fill ? bodyRows + 2 : undefined} overflow={fill ? 'hidden' : 'visible'}>
+        <Box flexDirection="column" height={paneParked ? bodyRows + 2 : fill ? bodyRows : undefined} overflow={fill ? 'hidden' : 'visible'}>
           {/* The grid sizes the pane; the content is placed over it, as an
               absolute Box paints over the siblings before it. */}
           {gridTiles(gridH).map((tileH, i) => (
             <Svg key={`grid-${i}`} source={gridSvg(W, tileH)} alt="dotted grid" width={W} height={tileH} />
           ))}
-          <Box flexDirection="column" position="absolute" top={fill ? 1 : 0} left={0} right={0} alignItems={align}>
+          <Box flexDirection="column" position="absolute" top={paneParked ? 1 : 0} left={0} right={0} alignItems={align}>
             {/* Row 1: cost, tokens and time. */}
             <Svg source={headerSvg(W, title, t)} alt={title ? `${title}: ${summary}` : summary} width={W} height={headerH} />
             {/* Row 2: the crew beside the skills and plugins. */}
