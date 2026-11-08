@@ -20,13 +20,16 @@ const windows = atom({ plugin: 'ribbon', key: 'windows' } as const, [])
 const cache = atom({ plugin: 'ribbon', key: 'cache' } as const, null)
 
 const BG = '#211f1b'
+const EDGE = '#3a362e'
+const LABEL_W = 9
+const ROW_GAP = 2
 const TEXT = '#ece6d6'
 const MUTED = '#8d8775'
 const ACCENT = '#8f8cf4'
 const OK = '#5fbf8f'
 const SEVEN = '#ff6b1a'
 const FIVE = '#f5a623'
-const WARM = '#cc6363'
+const WARM = OK
 const COLD = '#6aaabd'
 const TTL_MS = 60 * 60 * 1000
 const TICK_MS = 30_000
@@ -110,10 +113,11 @@ export const register: Register = on => {
     const { Box, Text, Button } = $.ui.resolve(e)
     const now = await $.clock.now()
     const rows: unknown[] = []
+    const costRows: unknown[] = []
     const label = (k: string, text: string) => (
-      <Text key={k} color={MUTED} bold>
-        {text}
-      </Text>
+      <Box key={k} width={LABEL_W} flexShrink={0}>
+        <Text color={MUTED}>{text}</Text>
+      </Box>
     )
 
     // FLOW: the savvy-flow plan.
@@ -125,8 +129,8 @@ export const register: Register = on => {
       const crew = list.length
       const working = list.filter(a => a.status === 'running').length
       rows.push(
-        <Box key="flow" flexDirection="row" gap={1} alignItems="center">
-          {label('flow-l', 'FLOW   ')}
+        <Box key="flow" flexDirection="row" gap={ROW_GAP} alignItems="center">
+          {label('flow-l', 'FLOW')}
           <Text color={f.isFinished ? OK : ACCENT}>◆</Text>
           <Text color={TEXT} bold wrap="truncate-end">
             {f.title}
@@ -138,10 +142,10 @@ export const register: Register = on => {
           <Text color={TEXT}>
             {f.total ? `${f.done}/${f.total}` : `${f.running} busy`}
           </Text>
-          <Text color={MUTED}>· {f.isFinished ? 'done' : f.phase}</Text>
+          <Text color={MUTED}>{f.isFinished ? 'done' : f.phase}</Text>
           <Box flexGrow={1} />
           <Button key="cockpit-agents" plain onPress={() => void run($, 'agents-info')}>
-            <Text color={working ? ACCENT : MUTED}>{working ? '●' : '○'}</Text> <Text color={TEXT}>×{crew} agents</Text>
+            <Text color={working ? ACCENT : MUTED}>{working ? '●' : '○'}</Text> <Text color={ACCENT}>{crew} agents</Text>
           </Button>
         </Box>,
       )
@@ -157,8 +161,8 @@ export const register: Register = on => {
       const glyph = (s: TaskStatus) => (s === 'completed' ? '✓' : s === 'in_progress' ? '◐' : '○')
       const tone = (s: TaskStatus) => (s === 'completed' ? OK : s === 'in_progress' ? ACCENT : MUTED)
       rows.push(
-        <Box key="tasks" flexDirection="row" gap={1} alignItems="center">
-          {label('tasks-l', 'TASKS  ')}
+        <Box key="tasks" flexDirection="row" gap={ROW_GAP} alignItems="center">
+          {label('tasks-l', 'TASKS')}
           <Text>
             <Text color={done === list.length ? OK : ACCENT}>{b.on}</Text>
             <Text color={MUTED}>{b.off}</Text>
@@ -168,18 +172,20 @@ export const register: Register = on => {
           </Text>
           {!isOpen && cur && (
             <Text color={MUTED} wrap="truncate-end">
-              · now <Text color={TEXT}>{cur.content}</Text>
+              now <Text color={TEXT}>{cur.content}</Text>
             </Text>
           )}
           <Box flexGrow={1} />
-          <Button key="cockpit-tasks" plain label={isOpen ? 'Hide' : 'Show'} onPress={() => update($, isTasksOpen, v => !v)} />
+          <Button key="cockpit-tasks" plain onPress={() => update($, isTasksOpen, v => !v)}>
+            <Text color={ACCENT}>{isOpen ? '▾ Hide' : '▸ Show'}</Text>
+          </Button>
         </Box>,
       )
       if (isOpen) {
         list.forEach((t, i) =>
           rows.push(
             <Text key={`task-${i}`} wrap="truncate-end">
-              {'         '}
+              {' '.repeat(LABEL_W + ROW_GAP)}
               <Text color={tone(t.status)}>{glyph(t.status)}</Text>{' '}
               <Text color={t.status === 'pending' ? MUTED : TEXT} bold={t.status === 'in_progress'} strikethrough={t.status === 'completed'}>
                 {t.content}
@@ -194,8 +200,8 @@ export const register: Register = on => {
     const p = beneath.has('ponytail') ? await read($, ponyBand) : null
     if (p) {
       const last = p.turnCosts[p.turnCosts.length - 1]
-      rows.push(
-        <Box key="session" flexDirection="row" gap={1} alignItems="center">
+      costRows.push(
+        <Box key="session" flexDirection="row" gap={ROW_GAP} alignItems="center">
           {label('session-l', 'SESSION')}
           <Text color={p.level === 'off' ? MUTED : OK}>●</Text>
           <Text color={TEXT}>{p.level}</Text>
@@ -203,10 +209,14 @@ export const register: Register = on => {
             ${p.spent.toFixed(2)}
           </Text>
           {last !== undefined && <Text color={MUTED}>last ${last.toFixed(2)}</Text>}
-          <Text color={MUTED}>· {fmtTime(p.busyMs)}</Text>
+          <Text color={MUTED}>{fmtTime(p.busyMs)}</Text>
           <Box flexGrow={1} />
-          <Button key="cockpit-review" plain label="Review" onPress={() => void run($, 'ponytail:ponytail-review')} />
-          <Button key="cockpit-audit" plain label="Audit" onPress={() => void run($, 'ponytail:ponytail-audit')} />
+          <Button key="cockpit-review" plain onPress={() => void run($, 'ponytail:ponytail-review')}>
+            <Text color={ACCENT}>Review</Text>
+          </Button>
+          <Button key="cockpit-audit" plain onPress={() => void run($, 'ponytail:ponytail-audit')}>
+            <Text color={ACCENT}>Audit</Text>
+          </Button>
         </Box>,
       )
     }
@@ -218,9 +228,9 @@ export const register: Register = on => {
       const idle = c && c.lastAt > 0 ? Math.max(0, now - c.lastAt) : null
       const isWarm = idle !== null && idle < TTL_MS
       if (ws.length > 0 || idle !== null) {
-        rows.push(
-          <Box key="usage" flexDirection="row" gap={1} alignItems="center">
-            {label('usage-l', 'USAGE  ')}
+        costRows.push(
+          <Box key="usage" flexDirection="row" gap={ROW_GAP} alignItems="center">
+            {label('usage-l', 'USAGE')}
             {ws.map(w => {
               const left = Math.max(0, Math.round(100 - w.percentUsed))
               const color = w.kind === 'seven_day' ? SEVEN : FIVE
@@ -234,7 +244,7 @@ export const register: Register = on => {
                   <Text color={color} bold>
                     {left}%
                   </Text>
-                  <Text color={MUTED}> {fmtReset(w.resetsAt, now)}  </Text>
+                  <Text color={MUTED}> {fmtReset(w.resetsAt, now)}</Text>
                 </Text>
               )
             })}
@@ -252,10 +262,17 @@ export const register: Register = on => {
       }
     }
 
-    if (rows.length === 0) return below
+    if (rows.length === 0 && costRows.length === 0) return below
+    const group = (k: string, items: unknown[]) =>
+      items.length > 0 && (
+        <Box key={k} flexDirection="column">
+          {items as never}
+        </Box>
+      )
     return (
-      <Box flexDirection="column" backgroundColor={BG} paddingX={1}>
-        {rows as never}
+      <Box flexDirection="column" rowGap={1} backgroundColor={BG} borderStyle="round" borderColor={EDGE} paddingX={2}>
+        {group('doing', rows)}
+        {group('cost', costRows)}
       </Box>
     )
   }).catch(($, e, next) => next(e))
