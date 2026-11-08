@@ -1,0 +1,14 @@
+## Routing
+- Search / locate code → `searcher` subagent
+- Routine edits → `editor` subagent
+- Review of auth, payments, data migrations → `reviewer` subagent
+- Everything else stays in main session
+- Never switch `/model` mid-task (loses prompt cache). Pick at session start, push heavy work to subagents.
+
+## Progress
+- For any multi-step task, report through the savvy-progress `progress` tool (title, phase, tasks, done) when it is available. Update it as each step finishes and set `finished` at the end.
+- The user watches the agents panel (`/agents-info`, opens itself each session): it lists agents, background tasks, and a Map of files touched with what they import.
+- Put work in the open: run long jobs as background tasks or subagents so they show in the panel. Background subagents with no pinned model auto-route to Sonnet (Haiku for Explore); pass `model` explicitly to override.
+- The `ribbon` plugin must be on: its band above the prompt shows plan usage (7-day and 5-hour left) and cache WARM/COLD with next-message cost. If `"ribbon@robonuggets"` is `false` in `~/.claude/settings.json` or the band is missing, tell the user at session start; do not edit settings yourself.
+- The crab costume shows the task and model: pirate = search, engineer = edit, detective = review, else chef = Sonnet, racer = Haiku, astronaut = Fable.
+

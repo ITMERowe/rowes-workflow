@@ -1,0 +1,19 @@
+{
+  "name": "rowes-workflow",
+  "owner": {
+    "name": "Rowe"
+  },
+  "description": "Rowe's Claude Code workflow: the cockpit band and the savvy-progress agents panel.",
+  "plugins": [
+    {
+      "name": "cockpit",
+      "source": "./plugins/cockpit",
+      "description": "One band above the prompt: FLOW, TASKS, SESSION and USAGE rows."
+    },
+    {
+      "name": "savvy-progress",
+      "source": "./plugins/savvy-progress",
+      "description": "Agents panel (/agents-info), quest map, progress band and background-agent model routing."
+    }
+  ]
+}
