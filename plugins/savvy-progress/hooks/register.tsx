@@ -44,13 +44,18 @@ const PANE = 'savvy-agents'
 type CardRect = { key: string; x: number; y: number; w: number; h: number; max: number; step: number }
 // Set by the last desktop draw; the wheel hook reads it to find the card under the pointer.
 let cardRects: CardRect[] = []
-const MAP_STEP = 48
 const scrollCard = ($: EngineInterface, key: string, d: number, max: number) =>
   update($, panel, prev => ({ ...prev, offsets: { ...prev.offsets, [key]: Math.max(0, Math.min(max, Math.min(prev.offsets?.[key] ?? 0, max) + d)) } }))
-// The card under a wheel tick, from the pointer's cell. shortcut: a desktop cell is 8 px wide and GRID_STEP tall, as W and paneH assume.
+// The card under a wheel tick, from the pointer's cell. shortcut: a desktop column is taken as 8 px, as W assumes.
+// shortcut: a desktop row is the code font's line height, about 20 px measured; read it from the surface if one ever reports it.
+export const ROW_PX = 20
+// The desktop sends the wheel only while the pane has rows to scroll: a parked pane is two rows taller than its window,
+// the window held on row 1, and every tick scrolls the card under the pointer instead.
+let paneParked = false
+let paneRow = 0
 export const cardAt = (rects: readonly CardRect[], column: number, row: number): CardRect | undefined => {
   const x = column * 8
-  const y = row * 16
+  const y = row * ROW_PX
   return rects.find(r => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h)
 }
 const PHASES: readonly Phase[] = ['plan', 'design', 'delegate', 'review', 'close']
@@ -1881,10 +1886,14 @@ export const register: Register = (on, options) => {
 
   // The wheel over a card scrolls that card, not the pane: the pane is sized to fit.
   on('ui.scroll', { requestId: PANE }, async ($, e, next) => {
-    const r = e.pointer && e.origin.kind === 'person' ? cardAt(cardRects, e.pointer.column, e.pointer.row) : undefined
-    if (!r || r.max === 0) return next(e)
-    await scrollCard($, r.key, Math.sign(e.by) * Math.max(1, Math.abs(e.by)) * r.step, r.max)
-    return {}
+    if (!paneParked) return next(e)
+    // The window's top row is paneRow; the cards start one row down, under the slack row.
+    const r = e.pointer && e.origin.kind === 'person' ? cardAt(cardRects, e.pointer.column, e.pointer.row + paneRow - 1) : undefined
+    if (r && r.max > 0) await scrollCard($, r.key, Math.sign(e.by) * Math.max(1, Math.abs(e.by)) * r.step, r.max)
+    // Park the window on row 1, so the next tick, up or down, has a row to scroll and reaches this hook.
+    const res = await next({ ...e, offset: 1 })
+    if (!res.deny) paneRow = 1
+    return res
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
@@ -1901,23 +1910,7 @@ export const register: Register = (on, options) => {
     ))
     const nowAt = await read($, now)
     const workList = await read($, work)
-    const project = await loadProject($)
     const idleAt = await read($, mainIdleAt)
-    const crewList = crewOf(list, bgList, workList, nowAt, idleAt)
-    const placed = placeCrew(project.map, crewList)
-    const shownMap: ProjectMap = project.map ?? { mtimeMs: 0, total: 0, communities: [], links: [] }
-    const zoom = zoomOf((await read($, panel)).mapZoom)
-    const mapCards = mapCardCount(shownMap, placed.has(OFF_CODE), zoom)
-    const touched = workList.filter(w => w.kind === 'edit' && w.path).map(w => w.path ?? '')
-    const setZoom = (d: number) => update($, panel, prev => ({ ...prev, mapZoom: Math.max(0, Math.min(2, zoomOf(prev.mapZoom) + d)) as Zoom }))
-    const mapButton = (
-      <Box key="map-tools" flexDirection="row" gap={2}>
-        <Button key="map-build" label={project.map ? '↻ Rebuild' : '⌗ Build project map (graphify)'} plain onPress={() => void buildProject($, project.root)} />
-        {project.map && <Button key="map-out" label="− Zoom out" plain onPress={() => setZoom(-1)} />}
-        {project.map && <Button key="map-in" label="+ Zoom in" plain onPress={() => setZoom(1)} />}
-      </Box>
-    )
-    const mapNote = project.note || (project.map ? '' : 'No project map yet: graphify maps the code into communities.')
     const taskList = await read($, tasks)
     const mainItem = [...workList].reverse().find(w => w.who === 'main')
     const doneCount = taskList.filter(t => t.status === 'completed').length
@@ -1957,25 +1950,6 @@ export const register: Register = (on, options) => {
           {t.content}
         </Text>
       </Text>
-    ))
-    const mapRows = [...shownMap.communities.map(c => ({ id: c.id, name: c.name, sub: `${c.files.length} files` })), ...(placed.has(OFF_CODE) ? [{ id: OFF_CODE, name: 'Terminal & web', sub: '' }] : [])].map(c => (
-      <Box key={`card-${c.id}`} flexDirection="column">
-        <Text wrap="truncate-end">
-          <Text color={placed.has(c.id) ? '#E0B34A' : undefined}>{placed.has(c.id) ? '◆' : '◇'}</Text> {c.name} <Text dimColor>{c.sub}</Text>
-        </Text>
-        {(placed.get(c.id) ?? []).map(m => (
-          <Text key={`crew-${c.id}-${m.key}`} wrap="truncate-end">
-            {'  '}
-            <Text color={m.tint ?? CLAY}>▣</Text> {m.name}
-            {m.item && (
-              <Text dimColor>
-                {' '}
-                {KIND[m.item.kind][0]} {m.item.label}
-              </Text>
-            )}
-          </Text>
-        ))}
-      </Box>
     ))
     const f = await read($, flow)
     const p: Panel = await read($, panel)
@@ -2041,7 +2015,6 @@ export const register: Register = (on, options) => {
       // A card's header row and its top and bottom border.
       const CARD_CHROME = LINE_H + 12
       const colW = (isTwoCol ? Math.floor(W / 2) - 18 : W) - CARD_IN
-      const mapW = W - CARD_IN
 
       // A section header hides or shows all of its rows; each card scrolls on its own under the wheel.
       const folded = (k: string) => (k === 'done' ? p.isDoneCollapsed : !!p.collapsed?.[k])
@@ -2092,19 +2065,17 @@ export const register: Register = (on, options) => {
 
       // Card heights: the pane is shared out so the cards fill it and only their insides scroll.
       // shortcut: assumes a desktop row is GRID_STEP px (as the grid does); with no bodyRows the cards take their natural height.
-      const paneH = (e.props.scroll?.bodyRows || 0) * GRID_STEP
-      const MAP_TOP = GRID_STEP
+      const bodyRows = e.props.scroll?.bodyRows || 0
+      const paneH = bodyRows * ROW_PX
       const headerH = headerHeight(title)
-      const mapFull = mapCards > 0 ? mapLayout(mapW, shownMap, placed.has(OFF_CODE), zoom).H : 0
-      const mapHeadH = LINE_H * (1 + (mapNote ? 1 : 0))
-      const mapNat = CARD_CHROME + mapHeadH + (folded('map') ? 0 : mapFull)
+      // The tools row under the cards: the compact toggle.
+      const TOOLS_H = LINE_H + 8
       const crewNat = CARD_CHROME + sum(crewItems)
       const kitNat = CARD_CHROME + sum(kitItems)
       const row2Nat = isTwoCol ? Math.max(crewNat, kitNat) : crewNat + kitNat
-      const avail = paneH - headerH - MAP_TOP - 8
+      const avail = paneH - headerH - TOOLS_H - 8
       const fill = paneH > 0 && avail > 200
-      const mapCardH = !fill || folded('map') ? mapNat : Math.min(mapNat, Math.max(Math.floor(avail * 0.45), avail - row2Nat))
-      const row2H = fill ? avail - mapCardH : row2Nat
+      const row2H = fill ? avail : row2Nat
       const crewH = !fill ? crewNat : isTwoCol ? row2H : Math.min(crewNat, Math.max(Math.floor(row2H * 0.6), row2H - kitNat))
       const kitH = !fill ? kitNat : isTwoCol ? row2H : row2H - crewH
 
@@ -2155,57 +2126,21 @@ export const register: Register = (on, options) => {
         </Box>
       )
 
-      // The map card: tools on top, the map below in a window that scrolls by px, its legend pinned under it.
-      const mapY = headerH + row2H + MAP_TOP
-      const mapView = folded('map') ? 0 : Math.max(0, Math.min(mapFull, mapCardH - CARD_CHROME - mapHeadH))
-      const mapMax = Math.max(0, mapFull - mapView)
-      const mapOff = Math.min(p.offsets?.map ?? 0, mapMax)
-      rects.push({ key: 'map', x: 0, y: mapY, w: W, h: mapCardH, max: mapMax, step: MAP_STEP })
       cardRects = rects
-      // The map is drawn once per draw; a cropped one shows a window of it, its legend as a text row under it.
-      const MAP_LEGEND = LINE_H
-      const mapStr = mapCards > 0 && mapView > 0 ? mapSvg(mapW, shownMap, placed, touched, zoom) : ''
-      const mapCrop = (y: number, ht: number) =>
-        `<svg xmlns="http://www.w3.org/2000/svg" width="${mapW}" height="${ht}" viewBox="0 ${y} ${mapW} ${ht}">${mapStr}</svg>`
-      const legendRow = (
-        <Text key="map-legend" dimColor wrap="truncate-end">
-          {(Object.keys(KIND) as WorkKind[]).map(k => `${KIND[k][0]} ${KIND[k][2]}`).join('    ')}
-        </Text>
-      )
-      const mapAlt = `Project map: ${mapCards} communities, zoom ${zoom}, ${crewList.length} working`
-      const mapCard = (
-        <Box key="card-map" flexDirection="column" borderStyle="round" borderColor={EDGE} paddingX={1} marginTop={1}>
-          <Box key="card-map-head" flexDirection="row" gap={2} alignItems="center">
-            <Text bold>Map</Text>
-            {project.map && <Text dimColor>{`${shownMap.total} communities · graphify`}</Text>}
-          </Box>
-          {mapNote && <Text dimColor>{mapNote}</Text>}
-          <Box key="map-row" flexDirection="row" gap={3}>
-            <Button key="fold-map" label={folded('map') ? `${isRtl() ? '◂' : '▸'} Show map` : '▾ Hide map'} plain onPress={() => fold('map')} />
-            {mapButton}
-            {toggleCompact}
-          </Box>
-          {mapCards > 0 && mapView > 0 && mapView >= mapFull && <Svg key="map" source={mapStr} alt={mapAlt} width={mapW} height={mapFull} />}
-          {mapCards > 0 && mapView > MAP_LEGEND && mapView < mapFull && (
-            <Box key="map-crop" flexDirection="column">
-              <Svg key="map" source={mapCrop(mapOff, mapView - MAP_LEGEND)} alt={mapAlt} width={mapW} height={mapView - MAP_LEGEND} />
-              {legendRow}
-            </Box>
-          )}
-          {fill && spacer('map-pad', mapW, mapCardH - CARD_CHROME - mapHeadH - mapView)}
-        </Box>
-      )
       // Every row sits in the absolute overlay, so all of them must size the grid or they are clipped.
-      const contentH = headerH + row2H + MAP_TOP + mapCardH + 8
-      const gridH = Math.max(contentH, paneH)
+      const contentH = headerH + row2H + TOOLS_H + 8
+      // A filled pane is parked (see paneParked): two rows of slack, the content one row down.
+      paneParked = fill
+      paneRow = e.props.scroll?.offset ?? paneRow
+      const gridH = fill ? paneH + 3 * ROW_PX : Math.max(contentH, paneH)
       return (
-        <Box flexDirection="column">
+        <Box flexDirection="column" height={fill ? bodyRows + 2 : undefined} overflow={fill ? 'hidden' : 'visible'}>
           {/* The grid sizes the pane; the content is placed over it, as an
               absolute Box paints over the siblings before it. */}
           {gridTiles(gridH).map((tileH, i) => (
             <Svg key={`grid-${i}`} source={gridSvg(W, tileH)} alt="dotted grid" width={W} height={tileH} />
           ))}
-          <Box flexDirection="column" position="absolute" top={0} left={0} right={0} alignItems={align}>
+          <Box flexDirection="column" position="absolute" top={fill ? 1 : 0} left={0} right={0} alignItems={align}>
             {/* Row 1: cost, tokens and time. */}
             <Svg source={headerSvg(W, title, t)} alt={title ? `${title}: ${summary}` : summary} width={W} height={headerH} />
             {/* Row 2: the crew beside the skills and plugins. */}
@@ -2213,8 +2148,10 @@ export const register: Register = (on, options) => {
               {left}
               {right}
             </Box>
-            {/* Row 3: the project map. */}
-            {mapCard}
+            {/* Row 3: tools. */}
+            <Box key="tools-row" flexDirection="row" gap={3} marginTop={1}>
+              {toggleCompact}
+            </Box>
           </Box>
         </Box>
       )
@@ -2314,10 +2251,6 @@ export const register: Register = (on, options) => {
             {bgRows}
             <Text dimColor>Skills & plugins · {kitActive} active of {kitRows.length}</Text>
             {kitText}
-            <Text dimColor>{project.map ? `Map · ${shownMap.total} communities from graphify` : 'Map'}</Text>
-            {mapNote && <Text dimColor>{mapNote}</Text>}
-            {mapButton}
-            {mapRows}
           </Box>
         )}
       </Box>

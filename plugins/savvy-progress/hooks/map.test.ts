@@ -130,7 +130,7 @@ test('a wheel tick scrolls the card under the pointer', () => {
   ]
   expect(cardAt(rects, 2, 10)?.key).toBe('crew')
   expect(cardAt(rects, 50, 10)?.key).toBe('kit')
-  expect(cardAt(rects, 10, 40)?.key).toBe('map')
+  expect(cardAt(rects, 10, 30)?.key).toBe('map')
   expect(cardAt(rects, 10, 1)).toBeUndefined()
 })
 
