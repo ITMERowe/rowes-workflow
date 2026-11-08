@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { bandSvg, crewOf, kitOf, kitRowsOf, OFF_CODE, placeCrew, projectOf, usageSvg, useKit, workOf } from './register'
+import { bandSvg, crewOf, kitOf, kitRowsOf, mapHeight, mapSvg, OFF_CODE, placeCrew, projectOf, usageSvg, useKit, workOf, zoomOf } from './register'
 
 test('a tool call becomes one map line', () => {
   expect(workOf('Edit', { file_path: 'C:\\repo\\src\\app.ts' })).toEqual(['edit', 'src/app.ts'])
@@ -76,4 +76,15 @@ test('skills and plugins: used ones first, active ones on top, then enabled ones
     ['ponytail', 'idle'],
     ['ribbon', 'idle'],
   ])
+})
+
+test('the map zooms: smaller cards fit more per row and show more communities', () => {
+  const p = projectOf(graph, 5)
+  expect(zoomOf(undefined)).toBe(1)
+  expect(zoomOf(0)).toBe(0)
+  expect(mapHeight(600, 6, 0)).toBeLessThan(mapHeight(600, 6, 2))
+  const small = mapSvg(600, p, new Map(), [], 0)
+  const big = mapSvg(600, p, new Map(), [], 2)
+  expect(small).not.toContain(' sym<')
+  expect(big).toContain('2 files · 2 sym')
 })

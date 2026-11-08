@@ -43,6 +43,8 @@ export type AgentRun = {
 export type Panel = {
   isCompact: boolean
   isDoneCollapsed: boolean
+  /** The Map's zoom: 0 chips, 1 cards (default), 2 detailed cards. */
+  mapZoom?: number
   autoOpenedFor: string
 }
 

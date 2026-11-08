@@ -880,13 +880,23 @@ const compactSvg = (W: number, list: AgentRun[], planned: Planned[], t: ReturnTy
 // agent, subagent and background task is working in. Work outside the code (commands,
 // web, searches, background tasks) sits on its own card.
 export const GRAPH = 'graphify-out/graph.json'
-const MAP_MAX = 12
+const MAP_MAX = 24
 const LIVE_MS = 90_000
-const CARD_H = 92
-const CARD_GAP = 14
+// Three zoom levels: 0 chips (name only, up to 24), 1 cards with counts (default, up to
+// 16), 2 cards with the latest action and a touched-files bar (up to 12).
+export type Zoom = 0 | 1 | 2
+const ZOOMS: Record<Zoom, { w: number; h: number; max: number }> = {
+  0: { w: 118, h: 26, max: 24 },
+  1: { w: 150, h: 40, max: 16 },
+  2: { w: 200, h: 62, max: 12 },
+}
+export const zoomOf = (v: unknown): Zoom => (v === 0 || v === 2 ? v : 1)
+const CARD_GAP = 8
 const MAP_PAD = 4
-const mapCols = (W: number): number => Math.max(1, Math.min(4, Math.floor(W / 230)))
-const mapHeight = (W: number, n: number): number => MAP_PAD * 2 + Math.ceil(n / mapCols(W)) * (CARD_H + CARD_GAP) - CARD_GAP + 22
+const mapCols = (W: number, z: Zoom): number => Math.max(1, Math.floor((W - MAP_PAD * 2 + CARD_GAP) / (ZOOMS[z].w + CARD_GAP)))
+export const mapCardCount = (p: ProjectMap, hasOff: boolean, z: Zoom): number => Math.min(p.communities.length, ZOOMS[z].max) + (hasOff ? 1 : 0)
+export const mapHeight = (W: number, n: number, z: Zoom): number =>
+  MAP_PAD * 2 + Math.ceil(n / mapCols(W, z)) * (ZOOMS[z].h + CARD_GAP) - CARD_GAP + 20
 
 const KIND: Record<WorkKind, [glyph: string, color: string, word: string]> = {
   read: ['◇', '#6AAABD', 'read'],
@@ -1012,17 +1022,21 @@ const MAP_CSS = `<style>
 .wire{stroke-dasharray:3 4}
 </style>`
 
-const crewCrab = (m: Crew, x: number, y: number): string =>
-  m.tint ? crab(x + 3, y + 5, 'other', false, m.isRunning, BG_SCALE, false, m.tint) : crab(x, y, m.costume, false, m.isRunning, 0.75)
+const crewCrab = (m: Crew, x: number, y: number, scale: number): string =>
+  m.tint ? crab(x, y, 'other', false, m.isRunning, scale * 0.8, false, m.tint) : crab(x, y, m.costume, false, m.isRunning, scale)
 
-const mapSvg = (W: number, p: ProjectMap, placed: Map<number, Crew[]>, touched: readonly string[]): string => {
+export const mapSvg = (W: number, p: ProjectMap, placed: Map<number, Crew[]>, touched: readonly string[], z: Zoom = 1): string => {
+  const Z = ZOOMS[z]
   const off = placed.get(OFF_CODE) ?? []
-  const cards = [...p.communities.map(c => ({ id: c.id, c })), ...(off.length ? [{ id: OFF_CODE, c: null }] : [])]
-  const cols = mapCols(W)
+  const shown = p.communities.slice(0, Z.max)
+  const cards = [...shown.map(c => ({ id: c.id, c })), ...(off.length ? [{ id: OFF_CODE, c: null }] : [])]
+  const cols = mapCols(W, z)
+  // Cards share the row's spare width, so the grid fills it edge to edge.
   const cw = (W - MAP_PAD * 2 - (cols - 1) * CARD_GAP) / cols
-  const spot = (i: number) => ({ x: MAP_PAD + (i % cols) * (cw + CARD_GAP), y: MAP_PAD + Math.floor(i / cols) * (CARD_H + CARD_GAP) })
+  const ch = Z.h
+  const spot = (i: number) => ({ x: MAP_PAD + (i % cols) * (cw + CARD_GAP), y: MAP_PAD + Math.floor(i / cols) * (ch + CARD_GAP) })
   const index = new Map(cards.map((k, i) => [k.id, i]))
-  const H = mapHeight(W, cards.length)
+  const H = mapHeight(W, cards.length, z)
 
   const wires = p.links.flatMap(([a, b, w]) => {
     const i = index.get(a)
@@ -1032,39 +1046,52 @@ const mapSvg = (W: number, p: ProjectMap, placed: Map<number, Crew[]>, touched: 
     const t = spot(j)
     const sameRow = s.y === t.y
     const [x1, y1, x2, y2] = sameRow
-      ? [s.x + (s.x < t.x ? cw : 0), s.y + CARD_H / 2, t.x + (s.x < t.x ? 0 : cw), t.y + CARD_H / 2]
-      : [s.x + cw / 2, s.y + (s.y < t.y ? CARD_H : 0), t.x + cw / 2, t.y + (s.y < t.y ? 0 : CARD_H)]
+      ? [s.x + (s.x < t.x ? cw : 0), s.y + ch / 2, t.x + (s.x < t.x ? 0 : cw), t.y + ch / 2]
+      : [s.x + cw / 2, s.y + (s.y < t.y ? ch : 0), t.x + cw / 2, t.y + (s.y < t.y ? 0 : ch)]
     const bend = sameRow ? `C${(x1 + x2) / 2} ${y1} ${(x1 + x2) / 2} ${y2}` : `C${x1} ${(y1 + y2) / 2} ${x2} ${(y1 + y2) / 2}`
-    return [`<path class="wire" d="M${x1} ${y1} ${bend} ${x2} ${y2}" fill="none" stroke-width="${Math.min(3, 1 + Math.log2(w) / 2)}"/>`]
+    return [`<path class="wire" d="M${x1} ${y1} ${bend} ${x2} ${y2}" fill="none" stroke-width="${Math.min(2.5, 0.8 + Math.log2(w) / 2)}"/>`]
   })
 
+  const crabScale = z === 0 ? 0.42 : z === 1 ? 0.5 : 0.62
+  const crabStep = Math.round(CRAB_BOX * crabScale) + 2
   const body = cards.map((k, i) => {
     const { x, y } = spot(i)
     const crew = placed.get(k.id) ?? []
     const isLive = crew.length > 0
     const latest = [...crew].filter(m => m.item).sort((a, b) => (b.item?.at ?? 0) - (a.item?.at ?? 0))[0]
-    const textW = cw - 24 - Math.min(3, crew.length) * 22
+    const maxCrabs = z === 0 ? 2 : 3
+    const textW = cw - 16 - Math.min(maxCrabs, crew.length) * crabStep
     const name = k.c ? k.c.name : 'Terminal & web'
     const files = k.c?.files ?? []
     const hit = files.filter(f => touched.some(t => inFile(t, f))).length
-    const sub = k.c ? `${files.length} file${files.length === 1 ? '' : 's'} · ${k.c.symbols} symbols` : `${off.length} running off the code`
-    const action = latest?.item
-      ? `<text x="${x + 12}" y="${y + 56}" font-family="${FONT}" font-size="11"><tspan fill="${KIND[latest.item.kind][1]}">${KIND[latest.item.kind][0]}</tspan><tspan class="t" dx="6">${xml(fitText(latest.item.label, 11, cw - 70))}</tspan><tspan class="m" dx="6">${xml(fitText(latest.name, 10, 80))}</tspan></text>`
-      : `<text class="m" x="${x + 12}" y="${y + 56}" font-family="${FONT}" font-size="11">${hit ? `${hit} touched this session` : 'quiet'}</text>`
-    const bar = k.c
-      ? `<g transform="translate(${x + 12},${y + 70})">${barGroup(`m-${k.id}`, cw - 24, 9, files.length ? hit / files.length : 0, isLive ? '#E0B34A' : ACCENT, '')}</g>`
-      : ''
-    const crabs = crew
-      .slice(0, 3)
-      .map((m, n) => crewCrab(m, x + cw - 30 - n * 22, y + 8))
-      .join('')
-    const more = crew.length > 3 ? `<text class="m" x="${x + cw - 96}" y="${y + 22}" font-family="${FONT}" font-size="10" text-anchor="end">+${crew.length - 3}</text>` : ''
-    return `<rect class="card${isLive ? ' on' : ''}" x="${x}" y="${y}" width="${cw}" height="${CARD_H}" rx="10" stroke-width="1.2"/>
-<text class="t" x="${x + 12}" y="${y + 21}" font-family="${FONT}" font-size="12" font-weight="600">${xml(fitText(name, 12, textW))}</text>
-<text class="s" x="${x + 12}" y="${y + 36}" font-family="${FONT}" font-size="10">${xml(fitText(sub, 10, textW))}</text>
-${action}${bar}${crabs}${more}`
+    const sub = k.c ? `${files.length} file${files.length === 1 ? '' : 's'} · ${k.c.symbols} sym` : `${off.length} running`
+    const nameSize = z === 0 ? 10.5 : 11.5
+    const nameY = z === 0 ? ch / 2 + 4 : 16
+    const parts = [
+      `<rect class="card${isLive ? ' on' : ''}" x="${x}" y="${y}" width="${cw}" height="${ch}" rx="${z === 0 ? 6 : 8}" stroke-width="1"/>`,
+      `<text class="t" x="${x + 8}" y="${y + nameY}" font-family="${FONT}" font-size="${nameSize}" font-weight="600">${xml(fitText(name, nameSize, textW))}</text>`,
+    ]
+    if (z >= 1) parts.push(`<text class="s" x="${x + 8}" y="${y + 30}" font-family="${FONT}" font-size="9.5">${xml(fitText(sub, 9.5, textW))}</text>`)
+    if (z === 2) {
+      if (latest?.item)
+        parts.push(
+          `<text x="${x + 8}" y="${y + 44}" font-family="${FONT}" font-size="10"><tspan fill="${KIND[latest.item.kind][1]}">${KIND[latest.item.kind][0]}</tspan><tspan class="t" dx="5">${xml(fitText(latest.item.label, 10, cw - 70))}</tspan><tspan class="m" dx="5">${xml(fitText(latest.name, 9, 60))}</tspan></text>`,
+        )
+      else if (hit) parts.push(`<text class="m" x="${x + 8}" y="${y + 44}" font-family="${FONT}" font-size="10">${hit} touched</text>`)
+      if (k.c) parts.push(`<g transform="translate(${x + 8},${y + 50})">${barGroup(`m-${k.id}`, cw - 16, 6, files.length ? hit / files.length : 0, isLive ? '#E0B34A' : ACCENT, '')}</g>`)
+    }
+    const crabY = y + (ch - CRAB_BOX * crabScale) / 2 - (z === 2 ? 8 : 0)
+    parts.push(
+      crew
+        .slice(0, maxCrabs)
+        .map((m, n) => crewCrab(m, x + cw - 4 - (n + 1) * crabStep, crabY, crabScale))
+        .join(''),
+    )
+    if (crew.length > maxCrabs)
+      parts.push(`<text class="m" x="${x + cw - 6 - maxCrabs * crabStep}" y="${crabY + 12}" font-family="${FONT}" font-size="9" text-anchor="end">+${crew.length - maxCrabs}</text>`)
+    return parts.join('')
   })
-  const hidden = p.total - p.communities.length
+  const hidden = p.total - shown.length
   const legend = (Object.keys(KIND) as WorkKind[]).map(k => `<tspan fill="${KIND[k][1]}">${KIND[k][0]}</tspan> ${KIND[k][2]}`).join('   ')
   return svg(
     W,
@@ -1072,10 +1099,9 @@ ${action}${bar}${crabs}${more}`
     `${MAP_CSS}${BAR_CSS(false)}
 ${wires.join('')}
 ${body.join('')}
-<text class="s" x="${MAP_PAD}" y="${H - 6}" font-family="${FONT}" font-size="10">${legend}${hidden > 0 ? `   · ${hidden} smaller communities not shown` : ''}</text>`,
+<text class="s" x="${MAP_PAD}" y="${H - 5}" font-family="${FONT}" font-size="9.5">${legend}${hidden > 0 ? `   · ${hidden} more (zoom out)` : ''}</text>`,
   )
 }
-
 
 // The graph is read once per change: the panel checks its mtime on each draw. graphify
 // writes it where it ran, which may be a folder or two above the session's own.
@@ -1668,15 +1694,16 @@ export const register: Register = (on, options) => {
     const crewList = crewOf(list, bgList, workList, nowAt)
     const placed = placeCrew(project.map, crewList)
     const shownMap: ProjectMap = project.map ?? { mtimeMs: 0, total: 0, communities: [], links: [] }
-    const mapCards = shownMap.communities.length + (placed.has(OFF_CODE) ? 1 : 0)
+    const zoom = zoomOf((await read($, panel)).mapZoom)
+    const mapCards = mapCardCount(shownMap, placed.has(OFF_CODE), zoom)
     const touched = workList.filter(w => w.kind === 'edit' && w.path).map(w => w.path ?? '')
+    const setZoom = (d: number) => update($, panel, prev => ({ ...prev, mapZoom: Math.max(0, Math.min(2, zoomOf(prev.mapZoom) + d)) as Zoom }))
     const mapButton = (
-      <Button
-        key="map-build"
-        label={project.map ? '↻ Rebuild map' : '⌗ Build project map (graphify)'}
-        plain
-        onPress={() => void buildProject($, project.root)}
-      />
+      <Box key="map-tools" flexDirection="row" gap={2}>
+        <Button key="map-build" label={project.map ? '↻ Rebuild' : '⌗ Build project map (graphify)'} plain onPress={() => void buildProject($, project.root)} />
+        {project.map && <Button key="map-out" label="− Zoom out" plain onPress={() => setZoom(-1)} />}
+        {project.map && <Button key="map-in" label="+ Zoom in" plain onPress={() => setZoom(1)} />}
+      </Box>
     )
     const mapNote = project.note || (project.map ? '' : 'No project map yet: graphify maps the code into communities.')
     const taskList = await read($, tasks)
@@ -1793,7 +1820,7 @@ export const register: Register = (on, options) => {
         (taskList.length > 0 ? 1 + taskList.length : 0) * LINE_H +
         (bgList.length > 0 ? LINE_H + bgList.length * BG_ROW_H : 0)
       const rightH = LINE_H + (kitShown.length ? kitShown.length * SKILL_ROW_H : LINE_H) + (kitMore > 0 ? LINE_H : 0)
-      const mapH = mapCards > 0 ? mapHeight(W, mapCards) : 0
+      const mapH = mapCards > 0 ? mapHeight(W, mapCards, zoom) : 0
       // Every row sits in the absolute overlay, so all of them must size the grid or they are clipped.
       const contentH =
         headerHeight(title) + LINE_H + (isTwoCol ? Math.max(leftH, rightH) : leftH + rightH) + LINE_H * (2 + (mapNote ? 1 : 0)) + mapH + 8
@@ -1857,8 +1884,8 @@ export const register: Register = (on, options) => {
             {mapCards > 0 && (
               <Svg
                 key="map"
-                source={mapSvg(W, shownMap, placed, touched)}
-                alt={`Project map: ${shownMap.communities.length} communities, ${crewList.length} working`}
+                source={mapSvg(W, shownMap, placed, touched, zoom)}
+                alt={`Project map: ${mapCards} communities, zoom ${zoom}, ${crewList.length} working`}
                 width={W}
                 height={mapH}
               />
