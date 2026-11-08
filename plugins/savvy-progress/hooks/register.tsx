@@ -15,6 +15,8 @@ const bg = atom({ plugin: 'savvy-progress', key: 'bg' } as const, [])
 const work = atom({ plugin: 'savvy-progress', key: 'work' } as const, [])
 const tasks = atom({ plugin: 'savvy-progress', key: 'tasks' } as const, [])
 const kit = atom({ plugin: 'savvy-progress', key: 'kit' } as const, [])
+// When the main session's last turn ended: its work before then is no longer live.
+const mainIdleAt = atom({ plugin: 'savvy-progress', key: 'mainIdleAt' } as const, 0)
 // ribbon's plan windows, for the band's USAGE row.
 const windows = atom({ plugin: 'ribbon', key: 'windows' } as const, [])
 type UsageWindow = { kind: string; percentUsed: number; resetsAt?: string }
@@ -370,7 +372,7 @@ ${BAR_CSS(f.isFinished)}
 <text class="t" ${titleAt} y="${H / 2 + 4.5}" font-family="${FONT}" font-size="13" font-weight="500">${xml(title)}</text>
 <g transform="translate(${rx(BAR_X, BAR_W)},${y0})">${barGroup('flow', BAR_W, BAR_H, ratio(f), color, label(f), { run, ticks: f.total, rtl })}</g>
 <text class="m" ${percentAt} font-family="${FONT}" font-size="12.5" font-variant-numeric="tabular-nums">${percent}</text>
-${CRAB_CSS}${crab(rx(W - CRAB_W + 1, crabW), 0, 'other', false, isWorking, 0.8, rtl)}
+${CRAB_CSS}${crab(rx(W - CRAB_W + 1, crabW), 0, 'king', false, isWorking, 0.8, rtl)}
 </svg>`
 }
 
@@ -649,10 +651,17 @@ const CRAB_CSS = `<style>
 @keyframes wave{50%{transform:skewY(-12deg) scaleX(.85)}}
 .c-explore.run .it{transform-origin:50% 100%;animation:fence .5s ease-in-out infinite}
 @keyframes fence{50%{transform:rotate(25deg)}}
+.c-king.run .gem{animation:blink 1s steps(1) infinite}
 @media (prefers-reduced-motion: reduce){.run,.run g{animation:none!important}}
 </style>`
 
 const COSTUMES: Record<string, (f: Fill, t: string) => void> = {
+  // King: the main session, in a gold crown; its gems glint while it works.
+  king: f => {
+    crabBody(f)
+    stamp(f, 8, 5, ['g....g....g....', 'gg..ggg..ggg.gg', 'ggggggggggggggg', 'ggrgggbgggggrgg', 'ddddddddddddddd'], { g: '#F5C542', d: '#C99A1E', r: '#D0453F', b: '#5B8DEF' })
+    f(8, 5, 1, 1, '#FBE08A', 'gem'); f(13, 5, 1, 1, '#FBE08A', 'gem'); f(18, 5, 1, 1, '#FBE08A', 'gem')
+  },
   // Fable: astronaut in a glass dome; floats instead of walking, the antenna and the star blink.
   fable: (f, t) => {
     crabBody(f)
@@ -982,11 +991,11 @@ export type Crew = {
   item?: WorkItem
 }
 
-export const crewOf = (list: AgentRun[], bgs: BgTask[], items: WorkItem[], at: number): Crew[] => {
+export const crewOf = (list: AgentRun[], bgs: BgTask[], items: WorkItem[], at: number, idleAt = 0): Crew[] => {
   const last = (who: string) => [...items].reverse().find(w => w.who === who)
   const crew: Crew[] = []
   const main = last('main')
-  if (main && at - main.at < LIVE_MS) crew.push({ key: 'main', name: 'main', costume: 'other', isRunning: true, item: main })
+  if (main && main.at > idleAt && at - main.at < LIVE_MS) crew.push({ key: 'main', name: 'main', costume: 'king', isRunning: true, item: main })
   for (const a of list) {
     if (a.status !== 'running' || !a.agentId) continue
     crew.push({ key: a.id, name: a.description || a.type, costume: costumeOf(a), isRunning: true, item: last(a.agentId) })
@@ -1227,7 +1236,7 @@ const mainRowSvg = (W: number, step: string, item: WorkItem | undefined, isWorki
   svg(
     W,
     MAIN_ROW_H,
-    `${rowCrab(W, 4, 8, 'other', false, isWorking)}
+    `${rowCrab(W, 4, 8, 'king', false, isWorking)}
 <text class="t" ${startText(W, 44, 19)} font-family="${FONT}" font-size="13" font-weight="600">Main session</text>
 <text class="s" ${startText(W, 44, 35)} font-family="${FONT}" font-size="11">${xml(fitText(step || 'no task list yet', 11, W - 70))}</text>
 ${item ? `<text ${endText(W, W - 8, 19)} font-family="${FONT}" font-size="11"><tspan fill="${KIND[item.kind][1]}">${KIND[item.kind][0]}</tspan><tspan class="m"> ${xml(fitText(item.label, 11, W * 0.45))}</tspan></text>` : ''}`,
@@ -1410,12 +1419,17 @@ export const register: Register = (on, options) => {
       description: 'Show or hide the panel of subagents: running, finished and planned, with model, context, cost and time',
     })
 
-    // Ticks the running agents' clocks; quiet when nothing runs.
+    // Ticks the clocks while anything is running or still lit (recent work, a skill in use),
+    // so it goes dark on time; quiet otherwise.
     $.clock.every(1000, () => {
       void (async () => {
-        const list = await read($, agents)
-        if (!list.some(a => a.status === 'running')) return
         const at = await $.clock.now()
+        const isRunning = (await read($, agents)).some(a => a.status === 'running') || (await read($, bg)).some(t => t.status === 'running')
+        const lastWork = (await read($, work)).at(-1)?.at ?? 0
+        const lastKit = Math.max(0, ...(await read($, kit)).map(u => u.at))
+        const shown = await read($, now)
+        const isLit = (lastWork > shown - LIVE_MS && at - lastWork < LIVE_MS + 2000) || (lastKit > shown - SKILL_LIVE_MS && at - lastKit < SKILL_LIVE_MS + 2000)
+        if (!isRunning && !isLit) return
         await update($, now, () => at)
       })()
     })
@@ -1646,6 +1660,11 @@ export const register: Register = (on, options) => {
 
   on('turn.complete', async ($, e, next) => {
     const agentId = e.agentId
+    if (!agentId) {
+      const at = await $.clock.now()
+      await update($, mainIdleAt, () => at)
+      await update($, now, () => at)
+    }
     if (agentId) {
       const at = await $.clock.now()
       await update($, agents, list =>
@@ -1691,7 +1710,8 @@ export const register: Register = (on, options) => {
     const nowAt = await read($, now)
     const workList = await read($, work)
     const project = await loadProject($)
-    const crewList = crewOf(list, bgList, workList, nowAt)
+    const idleAt = await read($, mainIdleAt)
+    const crewList = crewOf(list, bgList, workList, nowAt, idleAt)
     const placed = placeCrew(project.map, crewList)
     const shownMap: ProjectMap = project.map ?? { mtimeMs: 0, total: 0, communities: [], links: [] }
     const zoom = zoomOf((await read($, panel)).mapZoom)
@@ -1709,7 +1729,7 @@ export const register: Register = (on, options) => {
     const taskList = await read($, tasks)
     const mainItem = [...workList].reverse().find(w => w.who === 'main')
     const mainStep = taskList.find(t => t.status === 'in_progress')?.content ?? ''
-    const isMainWorking = !!mainItem && nowAt - mainItem.at < LIVE_MS
+    const isMainWorking = !!mainItem && mainItem.at > idleAt && nowAt - mainItem.at < LIVE_MS
     const showMain = !!mainItem || taskList.length > 0
     const kitRows = kitRowsOf(await read($, kit), await enabledPlugins($), nowAt)
     const kitActive = kitRows.filter(k => k.state === 'active').length

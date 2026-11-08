@@ -109,6 +109,7 @@ declare module 'claude-code' {
       work: WorkItem[]
       tasks: Task[]
       kit: SkillUse[]
+      mainIdleAt: number
       panel: Panel
       now: number
     }

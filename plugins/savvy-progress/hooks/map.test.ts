@@ -88,3 +88,10 @@ test('the map zooms: smaller cards fit more per row and show more communities', 
   expect(small).not.toContain(' sym<')
   expect(big).toContain('2 files · 2 sym')
 })
+
+test('the main session goes dark once its turn ends', () => {
+  const work = [{ who: 'main', kind: 'cli' as const, label: 'npm test', at: 9 }]
+  expect(crewOf([], [], work, 10).map(m => m.key)).toEqual(['main'])
+  expect(crewOf([], [], work, 10, 9.5)).toEqual([])
+  expect(crewOf([], [], work, 9 + 91_000)).toEqual([])
+})
