@@ -52,10 +52,11 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect((await bar.find({ key: 'savvy-agents' }))?.props.label).toBe('×200')
 
     const ui = await $.ui.mount({ plugin: PLUGIN, surface, component: 'Pane', requestId: 'savvy-agents', props: pane })
-    // The desktop draws a heading's label and count apart (label bold, count dim); the terminal as one line.
+    // The desktop heading is a fold button; 200 planned rows scroll in their own window, so the pane does not.
     if (surface === 'desktop') {
-      expect(await ui.find({ text: /^Planned$/ })).toBeDefined()
-      expect(await ui.find({ text: /^  200$/ })).toBeDefined()
+      expect((await ui.find({ key: 'fold-plan' }))?.props.label).toBe('▾ Planned · 200')
+      expect(await ui.find({ key: 'dn-plan' })).toBeDefined()
+      expect((await ui.findAll({ type: 'Svg' })).filter(el => String(el.props.alt).includes(': planned')).length).toBeLessThan(20)
     } else expect(await ui.find({ text: /Planned · 200/ })).toBeDefined()
     const drawn = (await ui.findAll({ type: 'Svg' })).map(el => String(el.props.source)).join('')
     expect(drawn).not.toContain('native code')

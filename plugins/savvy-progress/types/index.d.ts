@@ -45,6 +45,10 @@ export type Panel = {
   isDoneCollapsed: boolean
   /** The Map's zoom: 0 chips, 1 cards (default), 2 detailed cards. */
   mapZoom?: number
+  /** Folded sections, by key: run, plan, tasks, bg, map. Finished uses isDoneCollapsed. */
+  collapsed?: Record<string, boolean>
+  /** Each section's own scroll: the first item it shows (the map's in px). */
+  offsets?: Record<string, number>
   autoOpenedFor: string
 }
 
