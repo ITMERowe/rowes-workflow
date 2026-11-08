@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { bandSvg, crewOf, kitOf, kitRowsOf, mapHeight, mapSvg, OFF_CODE, placeCrew, projectOf, usageSvg, useKit, workOf, zoomOf } from './register'
+import { bandSvg, crewOf, kitLabel, kitOf, kitRowsOf, mapHeight, mapSvg, OFF_CODE, placeCrew, projectOf, usageSvg, useKit, workOf, zoomOf } from './register'
 
 test('a tool call becomes one map line', () => {
   expect(workOf('Edit', { file_path: 'C:\\repo\\src\\app.ts' })).toEqual(['edit', 'src/app.ts'])
@@ -94,4 +94,10 @@ test('the main session goes dark once its turn ends', () => {
   expect(crewOf([], [], work, 10).map(m => m.key)).toEqual(['main'])
   expect(crewOf([], [], work, 10, 9.5)).toEqual([])
   expect(crewOf([], [], work, 9 + 91_000)).toEqual([])
+})
+
+test('a plugin:skill name reads as the skill, its plugin after when different', () => {
+  expect(kitLabel('ui-ux-pro-max:ui-ux-pro-max')).toBe('ui-ux-pro-max')
+  expect(kitLabel('taste-skill:design-taste-frontend')).toBe('design-taste-frontend · taste-skill')
+  expect(kitLabel('graphify')).toBe('graphify')
 })

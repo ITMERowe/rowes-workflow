@@ -1193,7 +1193,7 @@ const skillTint = (name: string): string =>
   SKILL_TINTS[[...name].reduce((h, ch) => (h * 33 + ch.charCodeAt(0)) >>> 0, 11) % SKILL_TINTS.length] ?? '#F4D35E'
 const SKILL_LIVE_MS = 5 * 60_000
 const SKILL_SCALE = 0.7
-const SKILL_ROW_H = 30
+const SKILL_ROW_H = 38
 const SKILL_MAX = 14
 // Tools of the app itself and of this plugin are not skills the person added.
 const SKIP_SERVERS = /^(ccd_|savvy-progress$|claude_ai_)/
@@ -1225,6 +1225,12 @@ export const kitRowsOf = (uses: readonly SkillUse[], enabled: readonly string[],
   return [...used.filter(r => r.state === 'active'), ...used.filter(r => r.state === 'used'), ...idle]
 }
 
+export const kitLabel = (name: string): string => {
+  const [plugin, skill] = name.split(':')
+  if (!skill || !plugin) return name
+  return skill === plugin ? skill : `${skill} · ${plugin}`
+}
+
 const whoName = (who: string, list: readonly AgentRun[]): string =>
   who === 'main' ? 'main' : (list.find(a => a.agentId === who)?.type ?? 'subagent')
 
@@ -1238,17 +1244,18 @@ const kitRowSvg = (W: number, r: KitRow, list: readonly AgentRun[], at: number):
   return svg(
     W,
     SKILL_ROW_H,
-    `${crab(mx(W, 4, crabWidth(SKILL_SCALE)), 4, 'other', !isActive, isActive, SKILL_SCALE, isRtl(), tint)}
-<text class="${r.state === 'idle' ? 's' : 't'}" ${startText(W, 34, 14)} font-family="${FONT}" font-size="12"${isActive ? ' font-weight="600"' : ''}>${xml(fitText(r.name, 12, W - 60))}</text>
-<text class="m" ${startText(W, 34, 26)} font-family="${FONT}" font-size="10">${xml(fitText(sub, 10, W - 100))}</text>
-<text class="m" ${endText(W, W - (isActive ? 22 : 8), 14)} font-family="${FONT}" font-size="10">${r.kind}</text>
-${isActive ? `<circle class="live" cx="${mx(W, W - 10)}" cy="11" r="3.5" fill="${tint}"/>` : ''}`,
+    `${crab(mx(W, 4, crabWidth(SKILL_SCALE)), 8, 'other', !isActive, isActive, SKILL_SCALE, isRtl(), tint)}
+<text class="${r.state === 'idle' ? 's' : 't'}" ${startText(W, 36, 17)} font-family="${FONT}" font-size="12"${isActive ? ' font-weight="600"' : ''}>${xml(fitText(kitLabel(r.name), 12, W - 80))}</text>
+<text class="m" ${startText(W, 36, 31)} font-family="${FONT}" font-size="10">${xml(fitText(sub, 10, W - 90))}</text>
+<text class="m" ${endText(W, W - (isActive ? 22 : 8), 17)} font-family="${FONT}" font-size="10">${r.kind}</text>
+${isActive ? `<circle class="live" cx="${mx(W, W - 10)}" cy="14" r="3.5" fill="${tint}"/>` : ''}`,
   )
 }
 
 // Enabled plugins not used yet: a grid of small chips, two to a row.
 const CHIP_H = 24
-export const kitIdleHeight = (n: number): number => (n ? Math.ceil(n / 2) * CHIP_H + 4 : 0)
+const CHIP_TOP = 8
+export const kitIdleHeight = (n: number): number => (n ? CHIP_TOP + Math.ceil(n / 2) * CHIP_H + 4 : 0)
 const kitIdleSvg = (W: number, rows: readonly KitRow[]): string => {
   const cw = (W - 6) / 2
   return svg(
@@ -1257,7 +1264,7 @@ const kitIdleSvg = (W: number, rows: readonly KitRow[]): string => {
     rows
       .map((r, i) => {
         const x = (i % 2) * (cw + 6)
-        const y = Math.floor(i / 2) * CHIP_H + 2
+        const y = CHIP_TOP + Math.floor(i / 2) * CHIP_H + 2
         return `<rect class="tile ln" x="${mx(W, x, cw)}" y="${y + 0.5}" width="${cw}" height="${CHIP_H - 4}" rx="10" stroke-width="1"/>
 ${crab(mx(W, x + 5, crabWidth(0.45)), y + 3, 'other', true, false, 0.45, isRtl(), skillTint(r.name))}
 <text class="s" ${startText(W, x + 24, y + 14)} font-family="${FONT}" font-size="11">${xml(fitText(r.name, 11, cw - 30))}</text>`
@@ -1268,12 +1275,12 @@ ${crab(mx(W, x + 5, crabWidth(0.45)), y + 3, 'other', true, false, 0.45, isRtl()
 
 // The main session as a row beside its subagents: what it is on (the task list's current
 // step) and the last thing it did.
-const MAIN_ROW_H = 54
+const MAIN_ROW_H = 62
 const mainRowSvg = (W: number, step: string, item: WorkItem | undefined, isWorking: boolean): string =>
   svg(
     W,
     MAIN_ROW_H,
-    `<rect class="tile ln" x="0.5" y="0.5" width="${W - 1}" height="${MAIN_ROW_H - 3}" rx="10" stroke-width="1"/>
+    `<rect class="tile ln" x="0.5" y="0.5" width="${W - 1}" height="${MAIN_ROW_H - 10}" rx="10" stroke-width="1"/>
 ${rowCrab(W, 6, 10, 'king', false, isWorking)}
 <text class="t" ${startText(W, 46, 18)} font-family="${FONT}" font-size="13" font-weight="600">Main session</text>
 <text class="s" ${startText(W, 46, 33)} font-family="${FONT}" font-size="11">${xml(fitText(step || 'no task list yet', 11, W - 70))}</text>
@@ -1884,7 +1891,7 @@ export const register: Register = (on, options) => {
       // Row 2 is two columns once the pane is wide enough: the crew (main session, subagents,
       // tasks, background) on the left, skills and plugins on the right.
       const isTwoCol = W >= 560
-      const colW = isTwoCol ? Math.floor(W / 2) - 8 : W
+      const colW = isTwoCol ? Math.floor(W / 2) - 18 : W
       const leftH =
         (showMain ? MAIN_ROW_H : 0) +
         ((isEmpty ? 1 : 0) + (running.length > 0 ? 1 : 0) + (finished.length > 0 ? 1 : 0) + (planned.length > 0 ? 1 : 0)) * LINE_H +
@@ -1931,7 +1938,7 @@ export const register: Register = (on, options) => {
         </Box>
       )
       const right = (
-        <Box key="col-kit" flexDirection="column" width={isTwoCol ? '50%' : undefined} flexShrink={0} alignItems={align}>
+        <Box key="col-kit" flexDirection="column" width={isTwoCol ? '50%' : undefined} flexShrink={0} alignItems={align} paddingLeft={isTwoCol ? 1 : 0}>
           {section('h-kit', `Skills & plugins · ${kitActive} active · ${kitIdle.length} idle`)}
           {kitRows.length === 0 && <Text dimColor>No skills or plugins seen yet.</Text>}
           {kitShown.map(r => (
