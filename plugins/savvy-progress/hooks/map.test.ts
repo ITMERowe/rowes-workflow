@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { bandSvg, cardAt, crewOf, isOverdue, kitLabel, kitOf, kitRowsOf, mapLayout, mapSvg, OFF_CODE, placeCrew, projectOf, usageSvg, useKit, workOf, zoomOf } from './register'
+import { bandSvg, cardAt, crewOf, isOverdue, kitLabel, kitOf, kitRowsOf, modelTint, pluginsIn, mapLayout, mapSvg, OFF_CODE, placeCrew, projectOf, usageSvg, useKit, workOf, zoomOf } from './register'
 
 test('a tool call becomes one map line', () => {
   expect(workOf('Edit', { file_path: 'C:\\repo\\src\\app.ts' })).toEqual(['edit', 'src/app.ts'])
@@ -142,4 +142,18 @@ test('a background task whose end notice never came stops counting as running', 
   expect(isOverdue({ ...t, endsBy: undefined }, 59 * 60_000)).toBe(false)
   expect(isOverdue({ ...t, endsBy: undefined }, 61 * 60_000)).toBe(true)
   expect(isOverdue({ ...t, status: 'done' }, 1e12)).toBe(false)
+})
+
+test("a hook's added context marks the plugins it names as in use", () => {
+  const enabled = ['caveman', 'ponytail', 'i-have-adhd', 'claude-mem', 'ribbon']
+  const texts = ['CAVEMAN MODE ACTIVE (caveman). Respond terse.', 'PONYTAIL MODE ACTIVE: level full', '# i-have-adhd\nThe reader has ADHD.']
+  expect(pluginsIn(texts, enabled)).toEqual(['caveman', 'ponytail', 'i-have-adhd'])
+  // A name inside a longer word or a path segment is not a match.
+  expect(pluginsIn(['cavemanly ribbons', 'savvy-ribbon-x'], enabled)).toEqual([])
+})
+
+test('a crab is tinted by its model: Opus clay, Sonnet green, Haiku yellow', () => {
+  expect(modelTint('claude-opus-5-5')).toBeUndefined()
+  expect(modelTint('claude-sonnet-5-5')).toBe('#6FBF73')
+  expect(modelTint('claude-haiku-5-5')).toBe('#E8C547')
 })

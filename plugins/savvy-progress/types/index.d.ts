@@ -115,6 +115,8 @@ declare module 'claude-code' {
       work: WorkItem[]
       tasks: Task[]
       kit: SkillUse[]
+      /** Plugins whose SessionStart hook added context: on for the whole session. */
+      modes: string[]
       mainIdleAt: number
       panel: Panel
       now: number

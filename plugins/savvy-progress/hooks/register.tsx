@@ -15,6 +15,8 @@ const bg = atom({ plugin: 'savvy-progress', key: 'bg' } as const, [])
 const work = atom({ plugin: 'savvy-progress', key: 'work' } as const, [])
 const tasks = atom({ plugin: 'savvy-progress', key: 'tasks' } as const, [])
 const kit = atom({ plugin: 'savvy-progress', key: 'kit' } as const, [])
+// Plugins whose SessionStart hook added context: on for the whole session, so each prompt counts as their use.
+const modes = atom({ plugin: 'savvy-progress', key: 'modes' } as const, [])
 // When the main session's last turn ended: its work before then is no longer live.
 const mainIdleAt = atom({ plugin: 'savvy-progress', key: 'mainIdleAt' } as const, 0)
 // ribbon's plan windows, for the band's USAGE row.
@@ -801,8 +803,11 @@ const endText = (W: number, x: number, y: number, words = false): string =>
 const crabWidth = (scale: number): number => Math.round(CRAB_BOX * scale * 100) / 100
 
 // A panel crab at x in a row of width W: on the mirrored side and facing left in Hebrew.
-const rowCrab = (W: number, x: number, y: number, costume: string, dim = false, isWalking = false): string =>
-  crab(mx(W, x, crabWidth(CRAB_SCALE)), y, costume, dim, isWalking, CRAB_SCALE, isRtl())
+const rowCrab = (W: number, x: number, y: number, costume: string, dim = false, isWalking = false, tint?: string): string =>
+  crab(mx(W, x, crabWidth(CRAB_SCALE)), y, costume, dim, isWalking, CRAB_SCALE, isRtl(), tint)
+
+// The crab's shell by model, under any costume: Opus keeps the clay, Sonnet is green, Haiku yellow.
+export const modelTint = (model: string): string | undefined => (/sonnet/i.test(model) ? '#6FBF73' : /haiku/i.test(model) ? '#E8C547' : undefined)
 
 const svg = (W: number, H: number, body: string): string =>
   `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${PANE_CSS}${CRAB_CSS}${body}</svg>`
@@ -837,64 +842,122 @@ const progressOf = (a: AgentRun): number | null => {
 
 const ctxOf = (a: AgentRun): number => (a.contextMax ? Math.min(100, Math.round((a.contextTokens / a.contextMax) * 100)) : 0)
 
+// One row for every kind of work (a subagent, a background job, a task, a planned step), drawn alike:
+// the crab, the title with its status mark, a line of tag and meta with the numbers on its right, and a bar.
+const ROW_H = 58
+type RowSpec = {
+  crab: string
+  title: string
+  tag: string
+  color: string
+  meta: string
+  stats: string
+  /** The bar's fill, 0 to 1; null draws it grey at `grey` (the context when no steps are reported). */
+  fill: number | null
+  grey?: number
+  status: string
+  dim?: boolean
+}
+const workRowSvg = (W: number, r: RowSpec): string => {
+  const textW = W - 42 - 22
+  const barW = W - 42
+  const statsW = r.stats ? textWidth(r.stats, 11) + 12 : 0
+  const left = fitText(`${r.tag}${r.meta ? `  ·  ${r.meta}` : ''}`, 11, Math.max(40, barW - statsW))
+  const tagLen = Math.min(r.tag.length, left.length)
+  const fillW = Math.round(barW * Math.max(0, Math.min(1, r.fill ?? r.grey ?? 0)))
+  return svg(
+    W,
+    ROW_H,
+    `${r.crab}
+<text class="${r.dim ? 's' : 't'}" ${startText(W, 42, 17)} font-family="${FONT}" font-size="13" font-weight="600">${xml(fitText(r.title, 13, textW))}</text>
+<text ${startText(W, 42, 34)} font-family="${FONT}" font-size="11"><tspan fill="${r.color}">${xml(left.slice(0, tagLen))}</tspan><tspan class="s">${xml(left.slice(tagLen))}</tspan></text>
+${r.stats ? `<text class="s" ${endText(W, W, 34)} font-family="${FONT}" font-size="11" font-variant-numeric="tabular-nums">${xml(r.stats)}</text>` : ''}
+<rect class="k" x="${mx(W, 42, barW)}" y="44" width="${barW}" height="4" rx="2"/>${fillW > 0 ? `<rect${r.fill === null ? ' class="m"' : ''} x="${mx(W, 42, fillW)}" y="44" width="${fillW}" height="4" rx="2"${r.fill === null ? '' : ` fill="${r.color}"`}/>` : ''}
+${statusMark(mx(W, W - 8), 13, r.status, r.color)}
+<line class="ln" x1="0" y1="${ROW_H - 0.5}" x2="${W}" y2="${ROW_H - 0.5}"/>`,
+  )
+}
+const ROW_CRAB_Y = 10
+
 const agentSvg = (W: number, a: AgentRun, at: number): string => {
   const s = tr()
   const tier = tierOf(a.type)
-  const color = colorOf(tier)
   const ctx = ctxOf(a)
-  const textW = W - 42 - 22
   const meta = [runModel(a)]
   if (a.round > 1) meta.push(`${s.round} ${a.round}`)
+  if (a.stepTotal) meta.push(`${a.stepDone ?? 0}/${a.stepTotal}${a.stepNote ? ' ' + a.stepNote : ''}`)
   if (a.status === 'failed') meta.push(s.failed)
-  const barW = textW
-  const progress = progressOf(a)
-  const stats = `${s.ctx} ${ctx}% · ${fmtTokens(a.contextTokens)}  ≈${fmtCost(a.costUsd)}  ${fmtTime(elapsed(a, at))}`
-  const steps = a.stepTotal ? `${a.stepDone ?? 0}/${a.stepTotal}${a.stepNote ? ' · ' + a.stepNote : ''}` : ''
-  const stepsW = Math.max(0, barW - textWidth(stats, 11) - 12)
-  // Without reported steps the bar falls back to the context, drawn grey.
-  const fillW = Math.round(barW * (progress ?? ctx / 100))
-  return svg(
-    W,
-    66,
-    `${rowCrab(W, 0, 14, costumeOf(a), false, a.status === 'running')}
-<text class="t" ${startText(W, 42, 18)} font-family="${FONT}" font-size="13" font-weight="600">${xml(fitText(a.description || a.type, 13, textW))}</text>
-<text ${startText(W, 42, 34)} font-family="${FONT}" font-size="11"><tspan fill="${color}">${xml(tier === 'other' ? a.type : tierWord(tier))}</tspan><tspan class="s">  ${xml(meta.join('  ·  '))}</tspan></text>
-${steps && stepsW > 30 ? `<text class="t" ${startText(W, 42, 49)} font-family="${FONT}" font-size="11" font-variant-numeric="tabular-nums">${xml(fitText(steps, 11, stepsW))}</text>` : ''}
-<text class="s" ${endText(W, 42 + barW, 49, true)} font-family="${FONT}" font-size="11" font-variant-numeric="tabular-nums">${stats}</text>
-<rect class="k" x="${mx(W, 42, barW)}" y="55" width="${barW}" height="4" rx="2"/><rect${progress === null ? ' class="m"' : ''} x="${mx(W, 42, fillW)}" y="55" width="${fillW}" height="4" rx="2"${progress === null ? '' : ` fill="${color}"`}/>
-${statusMark(mx(W, W - 8), 16, a.status, color)}
-<line class="ln" x1="0" y1="65.5" x2="${W}" y2="65.5"/>`,
-  )
+  return workRowSvg(W, {
+    crab: rowCrab(W, 0, ROW_CRAB_Y, costumeOf(a), false, a.status === 'running', modelTint(a.model)),
+    title: a.description || a.type,
+    tag: tier === 'other' ? a.type : tierWord(tier),
+    color: colorOf(tier),
+    meta: meta.join('  ·  '),
+    stats: `${s.ctx} ${ctx}% · ${fmtTokens(a.contextTokens)}  ≈${fmtCost(a.costUsd)}  ${fmtTime(elapsed(a, at))}`,
+    fill: progressOf(a),
+    grey: ctx / 100,
+    status: a.status,
+  })
 }
 
 const plannedSvg = (W: number, p: Planned): string => {
   const tier = p.tier in TIER_COLOR ? p.tier : 'other'
-  const color = colorOf(tier)
-  const textW = W - 42 - 22
   const meta = [tierModel(tier)]
   if (p.after.length) meta.push(`${tr().after} ${p.after.join(', ')}`)
-  return svg(
-    W,
-    46,
-    `${rowCrab(W, 0, 6, tier, true)}
-<text class="s" ${startText(W, 42, 18)} font-family="${FONT}" font-size="13" font-weight="600">${xml(fitText(`${p.n}. ${p.title}`, 13, textW))}</text>
-<text ${startText(W, 42, 34)} font-family="${FONT}" font-size="11"><tspan fill="${color}">${xml(tierWord(tier))}</tspan><tspan class="m">  ${xml(meta.filter(Boolean).join('  ·  '))}</tspan></text>
-${statusMark(mx(W, W - 8), 16, 'planned', color)}
-<line class="ln" x1="0" y1="45.5" x2="${W}" y2="45.5"/>`,
-  )
+  return workRowSvg(W, {
+    crab: rowCrab(W, 0, ROW_CRAB_Y, tier, true, false, modelTint(TIER_MODEL[tier]?.[0] ?? '')),
+    title: `${p.n}. ${p.title}`,
+    tag: tierWord(tier),
+    color: colorOf(tier),
+    meta: meta.filter(Boolean).join('  ·  '),
+    stats: '',
+    fill: 0,
+    status: 'planned',
+    dim: true,
+  })
 }
+
+// A background job: a crab in the job's own colour; the bar fills when it ends.
+const bgSvg = (W: number, t: BgTask, at: number): string => {
+  const tint = tintOf(t.id)
+  return workRowSvg(W, {
+    crab: crab(mx(W, 0, crabWidth(CRAB_SCALE)), ROW_CRAB_Y, 'other', false, t.status === 'running', CRAB_SCALE, isRtl(), tint),
+    title: t.label,
+    tag: t.kind === 'monitor' ? 'monitor' : 'background shell',
+    color: tint,
+    meta: t.status === 'failed' ? tr().failed : '',
+    stats: fmtTime((t.endedAt ?? Math.max(at, t.startedAt)) - t.startedAt),
+    fill: t.status === 'running' ? null : 1,
+    status: t.status,
+  })
+}
+
+// A step of the app's task list (update_plan).
+const TASK_TINT = '#7FA7D9'
+const taskSvg = (W: number, t: Task, n: number, total: number): string =>
+  workRowSvg(W, {
+    crab: crab(mx(W, 0, crabWidth(CRAB_SCALE)), ROW_CRAB_Y, 'other', t.status === 'pending', t.status === 'in_progress', CRAB_SCALE, isRtl(), TASK_TINT),
+    title: t.content,
+    tag: 'task',
+    color: TASK_TINT,
+    meta: `${n} of ${total}`,
+    stats: '',
+    fill: t.status === 'completed' ? 1 : 0,
+    status: t.status === 'completed' ? 'done' : t.status === 'in_progress' ? 'running' : 'planned',
+    dim: t.status === 'pending',
+  })
 
 const compactSvg = (W: number, list: AgentRun[], planned: Planned[], t: ReturnType<typeof totals>): string => {
   const icons = [
-    ...list.filter(a => a.status === 'running').map(a => ({ k: costumeOf(a), c: colorOf(costumeOf(a)), s: 'running', dim: false })),
-    ...list.filter(a => a.status !== 'running').map(a => ({ k: costumeOf(a), c: colorOf(costumeOf(a)), s: a.status, dim: false })),
-    ...planned.map(p => ({ k: p.tier in TIER_COLOR ? p.tier : 'other', c: colorOf(p.tier), s: 'planned', dim: true })),
+    ...list.filter(a => a.status === 'running').map(a => ({ k: costumeOf(a), c: colorOf(costumeOf(a)), s: 'running', dim: false, tint: modelTint(a.model) })),
+    ...list.filter(a => a.status !== 'running').map(a => ({ k: costumeOf(a), c: colorOf(costumeOf(a)), s: a.status, dim: false, tint: modelTint(a.model) })),
+    ...planned.map(p => ({ k: p.tier in TIER_COLOR ? p.tier : 'other', c: colorOf(p.tier), s: 'planned', dim: true, tint: modelTint(TIER_MODEL[p.tier]?.[0] ?? '') })),
   ]
   const fit = Math.max(1, Math.floor((W - 150) / 36))
   const shown = icons.slice(0, fit)
   const more = icons.length - shown.length
   const body = shown
-    .map((ic, i) => rowCrab(W, i * 36, 0, ic.k, ic.dim, ic.s === 'running') + (ic.s === 'running' ? `<circle class="live" cx="${mx(W, i * 36 + 32)}" cy="4" r="3" fill="${ic.c}"/>` : ''))
+    .map((ic, i) => rowCrab(W, i * 36, 0, ic.k, ic.dim, ic.s === 'running', ic.tint) + (ic.s === 'running' ? `<circle class="live" cx="${mx(W, i * 36 + 32)}" cy="4" r="3" fill="${ic.c}"/>` : ''))
     .join('')
   const x = shown.length * 36 + (more ? 4 : 0)
   return svg(
@@ -1059,7 +1122,6 @@ const KIND: Record<WorkKind, [glyph: string, color: string, word: string]> = {
 // Background tasks: small crabs, each in its own colour.
 const BG_TINTS = ['#4FA3A5', '#8F8CF4', '#5B8DEF', '#C9A227', '#D96BA0', '#7FB069']
 const tintOf = (id: string): string => BG_TINTS[[...id].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7) % BG_TINTS.length] ?? '#4FA3A5'
-const BG_SCALE = 0.6
 
 const pathKey = (p: string): string => p.replace(/\\/g, '/').replace(/^\.\//, '').toLowerCase()
 
@@ -1303,21 +1365,6 @@ const buildProject = async ($: EngineInterface, root: string): Promise<void> => 
   }
 }
 
-// A background task as a panel row: a small crab in the task's own colour.
-const BG_ROW_H = 30
-const bgRowSvg = (W: number, t: BgTask, at: number): string => {
-  const tint = tintOf(t.id)
-  const time = fmtTime((t.endedAt ?? Math.max(at, t.startedAt)) - t.startedAt)
-  return svg(
-    W,
-    BG_ROW_H,
-    `${crab(mx(W, 6, crabWidth(BG_SCALE)), 6, 'other', t.status === 'failed', t.status === 'running', BG_SCALE, isRtl(), tint)}
-<text class="t" ${startText(W, 34, 19)} font-family="${FONT}" font-size="12">${xml(fitText(t.label, 12, W - 150))}</text>
-<text class="s" ${endText(W, W - 28, 19)} font-family="${FONT}" font-size="10">${t.kind} · ${time}</text>
-${statusMark(mx(W, W - 12), 15, t.status, tint)}`,
-  )
-}
-
 // --- Skills and plugins: what the session has loaded or called, each with its own crab.
 // Active means used in the last few minutes; the rest are enabled plugins and skills used
 // earlier. Their tints are a palette of their own, apart from subagent tiers and tasks.
@@ -1346,6 +1393,15 @@ export const useKit = (list: readonly SkillUse[], kind: SkillKind, name: string,
   const next: SkillUse = { name, kind: prev?.kind === 'skill' ? 'skill' : kind, who, at, count: (prev?.count ?? 0) + 1 }
   return [...list.filter(u => u.name !== name), next].slice(-60)
 }
+
+// The enabled plugins a hook's added context names: a plugin's command hooks run in the engine's core,
+// so the context they add is the only sign of them.
+// shortcut: matches by name, so a context naming another plugin marks that one too; use the hook's own plugin if the trace ever names it.
+export const pluginsIn = (texts: readonly string[], enabled: readonly string[]): string[] =>
+  enabled.filter(n => {
+    const re = new RegExp(`(^|[^\\w-])${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^\\w-]|$)`, 'i')
+    return texts.some(t => re.test(t))
+  })
 
 export type KitRow = { name: string; kind: SkillKind; state: 'active' | 'used' | 'idle'; use?: SkillUse }
 
@@ -1685,6 +1741,26 @@ export const register: Register = (on, options) => {
     }
     return next(e)
   })
+  // Modes a plugin's hook turns on (caveman, ponytail, ...) never call a tool: their added context is the use.
+  on('classic.SessionStart', async ($, e, next) => {
+    const r = await next(e)
+    const found = pluginsIn(r.additionalContext ?? [], await enabledPlugins($))
+    await update($, modes, prev => [...new Set([...(e.source === 'compact' || e.source === 'resume' ? prev : []), ...found])])
+    if (found.length) {
+      const at = await $.clock.now()
+      await update($, kit, list => found.reduce((l, n) => useKit(l, 'plugin', n, 'main', at), list))
+    }
+    return r
+  }).catch(($, e, next) => next(e))
+  on('classic.UserPromptSubmit', async ($, e, next) => {
+    const r = await next(e)
+    const found = [...new Set([...pluginsIn(r.additionalContext ?? [], await enabledPlugins($)), ...(await read($, modes))])]
+    if (found.length) {
+      const at = await $.clock.now()
+      await update($, kit, list => found.reduce((l, n) => useKit(l, 'plugin', n, 'main', at), list))
+    }
+    return r
+  }).catch(($, e, next) => next(e))
   on('skill.prompt', async ($, e, next) => {
     const at = await $.clock.now()
     await update($, kit, list => useKit(list, 'skill', e.skill, 'main', at))
@@ -1939,8 +2015,6 @@ export const register: Register = (on, options) => {
       </Text>
     ))
     const tasksDone = taskList.filter(t => t.status === 'completed').length
-    // A finished list folds to one line.
-    const isTasksDone = taskList.length > 0 && tasksDone === taskList.length
     const taskRows = taskList.map((t, i) => (
       <Text key={`task-${i}`} wrap="truncate-end">
         <Text color={TASK_COLOR[t.status]} dimColor={t.status === 'pending'}>
@@ -2031,27 +2105,31 @@ export const register: Register = (on, options) => {
       const rows = <T,>(k: string, items: T[], h: number, draw: (x: T) => unknown, key: (x: T) => string): Item[] =>
         folded(k) ? [] : items.map(x => ({ key: key(x), h, node: draw(x) }))
 
+      type Row = { key: string; node: unknown }
+      const row = (key: string, src: string, alt: string): Row => ({ key, node: <Svg key={key} source={src} alt={alt} width={colW} height={ROW_H} /> })
+      const agentRow = (a: AgentRun) => row(a.id, agentSvg(colW, a, at), `${a.description}: ${modelName(a.model)}, ${a.status === 'running' ? s.isRunning : s.isFinished}`)
+      const bgRow = (t: BgTask) => row(`bg-${t.id}`, bgSvg(colW, t, nowAt), `${t.kind}: ${t.label}, ${t.status}`)
+      const taskRow = (t: Task, i: number) => row(`task-${i}`, taskSvg(colW, t, i + 1, taskList.length), `Task ${i + 1}: ${t.content}, ${t.status}`)
+      const tasksAt = (st: TaskStatus) => taskList.map((t, i) => ({ t, i })).filter(x => x.t.status === st).map(x => taskRow(x.t, x.i))
+      const runAll: Row[] = [...running.map(agentRow), ...bgList.filter(t => t.status === 'running').map(bgRow), ...tasksAt('in_progress')]
+      const planAll: Row[] = [
+        ...planned.map(pl => row(`plan-${pl.n}`, plannedSvg(colW, pl), `${pl.n}. ${pl.title}: ${s.isPlanned}`)),
+        ...tasksAt('pending'),
+      ]
+      const doneAll: Row[] = [...finished.map(agentRow), ...bgList.filter(t => t.status !== 'running').map(bgRow), ...tasksAt('completed')]
+
       const crewItems: Item[] = [
         ...(showMain
           ? [{ key: 'main', h: MAIN_ROW_H, node: <Svg key="main" source={mainRowSvg(colW, mainStep, mainItem, isMainWorking)} alt={`Main session: ${mainStep}`} width={colW} height={MAIN_ROW_H} /> }]
           : []),
         ...(isEmpty ? [{ key: 'empty', h: LINE_H, node: <Text key="empty" dimColor>{s.empty}</Text> }] : []),
-        ...(running.length ? [sectionHead('run', s.running, String(running.length))] : []),
-        ...rows('run', running, 66, a => <Svg key={a.id} source={agentSvg(colW, a, at)} alt={`${a.description}: ${modelName(a.model)}, ${s.isRunning}`} width={colW} height={66} />, a => a.id),
-        ...(finished.length ? [sectionHead('done', s.finished, String(finished.length))] : []),
-        ...rows('done', finished, 66, a => <Svg key={a.id} source={agentSvg(colW, a, at)} alt={`${a.description}: ${modelName(a.model)}, ${s.isFinished}`} width={colW} height={66} />, a => a.id),
-        ...(planned.length ? [sectionHead('plan', s.planned, String(planned.length))] : []),
-        ...rows('plan', planned, 46, pl => <Svg key={`plan-${pl.n}`} source={plannedSvg(colW, pl)} alt={`${pl.n}. ${pl.title}: ${s.isPlanned}`} width={colW} height={46} />, pl => `plan-${pl.n}`),
-        ...(taskList.length ? [sectionHead('tasks', 'Tasks', `${tasksDone}/${taskList.length}`)] : []),
-        ...(isTasksDone
-          ? rows('tasks', [0], LINE_H, () => (
-              <Text key="tasks-done">
-                <Text color={DONE}>✓</Text> <Text dimColor>all {taskList.length} done</Text>
-              </Text>
-            ), () => 'tasks-done')
-          : rows('tasks', taskRows.map((r, i) => ({ r, i })), LINE_H, x => x.r, x => `task-${x.i}`)),
-        ...(bgList.length ? [sectionHead('bg', 'Background', String(bgList.length))] : []),
-        ...rows('bg', bgList, BG_ROW_H, t => <Svg key={`bg-${t.id}`} source={bgRowSvg(colW, t, nowAt)} alt={`${t.kind}: ${t.label}, ${t.status}`} width={colW} height={BG_ROW_H} />, t => `bg-${t.id}`),
+        // Subagents, background jobs and tasks share the sections: only running or not sets them apart.
+        ...(runAll.length ? [sectionHead('run', s.running, String(runAll.length))] : []),
+        ...rows('run', runAll, ROW_H, x => x.node, x => x.key),
+        ...(planAll.length ? [sectionHead('plan', s.planned, String(planAll.length))] : []),
+        ...rows('plan', planAll, ROW_H, x => x.node, x => x.key),
+        ...(doneAll.length ? [sectionHead('done', s.finished, String(doneAll.length))] : []),
+        ...rows('done', doneAll, ROW_H, x => x.node, x => x.key),
       ]
       const kitItems: Item[] = [
         ...(kitRows.length === 0 ? [{ key: 'kit-none', h: LINE_H, node: <Text key="kit-none" dimColor>No skills or plugins seen yet.</Text> }] : []),
@@ -2117,7 +2195,7 @@ export const register: Register = (on, options) => {
       const colX = isTwoCol ? Math.floor(W / 2) : 0
       const left = (
         <Box key="col-crew" flexDirection="column" width={isTwoCol ? '50%' : undefined} flexShrink={0} alignItems={align} paddingRight={isTwoCol ? 1 : 0}>
-          {listCard('crew', 'Agents', `${running.length} running · ${finished.length} done${bgList.length ? ` · ${bgList.length} background` : ''}`, crewItems, crewH, colW, isRtl() && isTwoCol ? colX : 0, headerH)}
+          {listCard('crew', 'Agents', `${runAll.length} running · ${doneAll.length} done`, crewItems, crewH, colW, isRtl() && isTwoCol ? colX : 0, headerH)}
         </Box>
       )
       const right = (
