@@ -2016,7 +2016,9 @@ export const register: Register = (on, options) => {
         update($, panel, prev =>
           k === 'done' ? { ...prev, isDoneCollapsed: !prev.isDoneCollapsed } : { ...prev, collapsed: { ...prev.collapsed, [k]: !prev.collapsed?.[k] } },
         )
-      const scrollTo = (k: string, v: number) => update($, panel, prev => ({ ...prev, offsets: { ...prev.offsets, [k]: Math.max(0, v) } }))
+      // Steps from the stored offset, not the drawn one, so presses before a redraw all count.
+      const scrollBy = (k: string, d: number, max: number) =>
+        update($, panel, prev => ({ ...prev, offsets: { ...prev.offsets, [k]: Math.max(0, Math.min(max, Math.min(prev.offsets?.[k] ?? 0, max) + d)) } }))
       // shortcut: assumes a desktop row is GRID_STEP px (as gridH does); 0 rows means unknown, so nothing is capped.
       const paneH = (e.props.scroll?.bodyRows || 0) * GRID_STEP || Infinity
       const mapFull = mapCards > 0 ? mapLayout(mapW, shownMap, placed.has(OFF_CODE), zoom).H : 0
@@ -2030,9 +2032,11 @@ export const register: Register = (on, options) => {
         { key: 'tasks', n: isTasksDone ? 0 : taskList.length, h: LINE_H },
         { key: 'bg', n: bgList.length, h: BG_ROW_H },
       ]
+      const isDoneLine = isTasksDone && !folded('tasks')
+      const rightH = LINE_H + kitShown.length * SKILL_ROW_H + (kitMore > 0 ? LINE_H : 0) + kitIdleHeight(kitIdle.length) + (kitRows.length ? 0 : LINE_H) + CARD_EXTRA
       const heads = lists.filter(l => l.n > 0 || (l.key === 'tasks' && taskList.length > 0)).length
       let room =
-        paneH - headerHeight(title) - mapChrome - (folded('map') ? 0 : mapView) - CARD_EXTRA - (showMain ? MAIN_ROW_H : 0) - (heads + (isTasksDone ? 1 : 0)) * LINE_H
+        paneH - headerHeight(title) - mapChrome - (folded('map') ? 0 : mapView) - CARD_EXTRA - (showMain ? MAIN_ROW_H : 0) - (heads + (isDoneLine ? 1 : 0)) * LINE_H - (isTwoCol ? 0 : rightH)
       // Hand out rows one at a time, round robin, so every open section shows something.
       const fit: Record<string, number> = {}
       for (const l of lists) fit[l.key] = 0
@@ -2049,16 +2053,17 @@ export const register: Register = (on, options) => {
         const off = Math.min(p.offsets?.[k] ?? 0, Math.max(0, items.length - fit[k]))
         return folded(k) ? [] : items.slice(off, off + fit[k])
       }
-      const head = (k: string, label: string, n: number) => {
+      const head = (k: string, label: string, n: number, count = String(n)) => {
         const shown = folded(k) ? 0 : fit[k]
-        const off = Math.min(p.offsets?.[k] ?? 0, Math.max(0, n - shown))
-        const isWindowed = !folded(k) && shown < n
+        const max = Math.max(0, n - shown)
+        const off = Math.min(p.offsets?.[k] ?? 0, max)
+        const isWindowed = !folded(k) && shown > 0 && shown < n
         return (
           <Box key={`h-${k}`} flexDirection="row" gap={2} alignItems="center">
-            <Button key={`fold-${k}`} label={`${folded(k) ? (isRtl() ? '◂' : '▸') : '▾'} ${label} · ${n}`} plain onPress={() => fold(k)} />
+            <Button key={`fold-${k}`} label={`${folded(k) ? (isRtl() ? '◂' : '▸') : '▾'} ${label} · ${count}`} plain onPress={() => fold(k)} />
             {isWindowed && <Text dimColor>{`${off + 1}–${off + shown} of ${n}`}</Text>}
-            {isWindowed && off > 0 && <Button key={`up-${k}`} label="▲" plain onPress={() => scrollTo(k, off - shown)} />}
-            {isWindowed && off + shown < n && <Button key={`dn-${k}`} label="▼" plain onPress={() => scrollTo(k, off + shown)} />}
+            {isWindowed && off > 0 && <Button key={`up-${k}`} label="▲" plain onPress={() => scrollBy(k, -shown, max)} />}
+            {isWindowed && off < max && <Button key={`dn-${k}`} label="▼" plain onPress={() => scrollBy(k, shown, max)} />}
           </Box>
         )
       }
@@ -2067,7 +2072,12 @@ export const register: Register = (on, options) => {
       const shownPlan = win('plan', planned)
       const shownTasks = win('tasks', taskRows)
       const shownBg = win('bg', bgList)
-      const mapOff = Math.min(p.offsets?.map ?? 0, Math.max(0, mapFull - mapView))
+      const mapMax = Math.max(0, mapFull - mapView)
+      const mapOff = Math.min(p.offsets?.map ?? 0, mapMax)
+      // A cropped map keeps its legend strip (the bottom MAP_LEGEND px) pinned under the window.
+      const MAP_LEGEND = 20
+      const mapCrop = (y: number, h: number) =>
+        `<svg xmlns="http://www.w3.org/2000/svg" width="${mapW}" height="${h}" viewBox="0 ${y} ${mapW} ${h}">${mapSvg(mapW, shownMap, placed, touched, zoom)}</svg>`
       const card = (key: string, head: string, count: string, body: unknown, tools?: unknown, top = 0) => (
         <Box key={key} flexDirection="column" borderStyle="round" borderColor={EDGE} paddingX={1} marginTop={top}>
           <Box key={`${key}-head`} flexDirection="row" gap={2} alignItems="center">
@@ -2080,13 +2090,12 @@ export const register: Register = (on, options) => {
       )
       const leftH =
         (showMain ? MAIN_ROW_H : 0) +
-        ((isEmpty ? 1 : 0) + heads + (isTasksDone ? 1 : 0)) * LINE_H +
+        ((isEmpty ? 1 : 0) + heads + (isDoneLine ? 1 : 0)) * LINE_H +
         (shownRun.length + shownFin.length) * 66 +
         shownPlan.length * 46 +
         shownTasks.length * LINE_H +
         shownBg.length * BG_ROW_H +
         CARD_EXTRA
-      const rightH = LINE_H + kitShown.length * SKILL_ROW_H + (kitMore > 0 ? LINE_H : 0) + kitIdleHeight(kitIdle.length) + (kitRows.length ? 0 : LINE_H) + CARD_EXTRA
       const mapH = mapView
       // Every row sits in the absolute overlay, so all of them must size the grid or they are clipped.
       const contentH =
@@ -2114,8 +2123,8 @@ export const register: Register = (on, options) => {
           {shownPlan.map(pl => (
             <Svg key={`plan-${pl.n}`} source={plannedSvg(colW, pl)} alt={`${pl.n}. ${pl.title}: ${s.isPlanned}`} width={colW} height={46} />
           ))}
-          {taskList.length > 0 && head('tasks', `Tasks ${tasksDone}/${taskList.length}`, taskList.length)}
-          {isTasksDone ? (
+          {taskList.length > 0 && head('tasks', 'Tasks', isTasksDone ? 0 : taskList.length, `${tasksDone}/${taskList.length}`)}
+          {isDoneLine ? (
             <Text key="tasks-done">
               <Text color={DONE}>✓</Text> <Text dimColor>all {taskList.length} done</Text>
             </Text>
@@ -2174,22 +2183,30 @@ export const register: Register = (on, options) => {
                 <Box key="map-row" flexDirection="row" gap={3}>
                   <Button key="fold-map" label={folded('map') ? `${isRtl() ? '◂' : '▸'} Show map` : '▾ Hide map'} plain onPress={() => fold('map')} />
                   {mapButton}
-                  {mapView > 0 && mapOff > 0 && <Button key="up-map" label="▲" plain onPress={() => scrollTo('map', mapOff - Math.floor(mapView / 2))} />}
-                  {mapView > 0 && mapOff + mapView < mapFull && <Button key="dn-map" label="▼" plain onPress={() => scrollTo('map', mapOff + Math.floor(mapView / 2))} />}
+                  {mapView > 0 && mapOff > 0 && <Button key="up-map" label="▲" plain onPress={() => scrollBy('map', -Math.floor(mapView / 2), mapMax)} />}
+                  {mapView > 0 && mapOff + mapView < mapFull && <Button key="dn-map" label="▼" plain onPress={() => scrollBy('map', Math.floor(mapView / 2), mapMax)} />}
                   {toggleCompact}
                 </Box>
-                {mapCards > 0 && mapView > 0 && (
+                {mapCards > 0 && mapView > 0 && mapView >= mapFull && (
                   <Svg
                     key="map"
-                    source={
-                      mapView < mapFull
-                        ? `<svg xmlns="http://www.w3.org/2000/svg" width="${mapW}" height="${mapView}" viewBox="0 ${mapOff} ${mapW} ${mapView}">${mapSvg(mapW, shownMap, placed, touched, zoom)}</svg>`
-                        : mapSvg(mapW, shownMap, placed, touched, zoom)
-                    }
+                    source={mapSvg(mapW, shownMap, placed, touched, zoom)}
                     alt={`Project map: ${mapCards} communities, zoom ${zoom}, ${crewList.length} working`}
                     width={mapW}
                     height={mapH}
                   />
+                )}
+                {mapCards > 0 && mapView > 0 && mapView < mapFull && (
+                  <Box key="map-crop" flexDirection="column">
+                    <Svg
+                      key="map"
+                      source={mapCrop(mapOff, mapView - MAP_LEGEND)}
+                      alt={`Project map: ${mapCards} communities, zoom ${zoom}, ${crewList.length} working`}
+                      width={mapW}
+                      height={mapView - MAP_LEGEND}
+                    />
+                    <Svg key="map-legend" source={mapCrop(mapFull - MAP_LEGEND, MAP_LEGEND)} alt="Map legend" width={mapW} height={MAP_LEGEND} />
+                  </Box>
                 )}
               </Box>,
               undefined,
