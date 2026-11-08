@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { AgentRun, BgTask, FileNode, Flow, Panel, Phase, PlannedTask } from '../types'
+import type { AgentRun, BgTask, Flow, Panel, Phase, PlannedTask, ProjectMap, SkillKind, SkillUse, Task, TaskStatus, WorkItem, WorkKind } from '../types'
 
 const flow = atom({ plugin: 'savvy-progress', key: 'flow' } as const, null)
 const agents = atom({ plugin: 'savvy-progress', key: 'agents' } as const, [])
@@ -12,7 +12,12 @@ const panel = atom({ plugin: 'savvy-progress', key: 'panel' } as const, {
 })
 const now = atom({ plugin: 'savvy-progress', key: 'now' } as const, 0)
 const bg = atom({ plugin: 'savvy-progress', key: 'bg' } as const, [])
-const files = atom({ plugin: 'savvy-progress', key: 'files' } as const, [])
+const work = atom({ plugin: 'savvy-progress', key: 'work' } as const, [])
+const tasks = atom({ plugin: 'savvy-progress', key: 'tasks' } as const, [])
+const kit = atom({ plugin: 'savvy-progress', key: 'kit' } as const, [])
+// ribbon's plan windows, for the band's USAGE row.
+const windows = atom({ plugin: 'ribbon', key: 'windows' } as const, [])
+type UsageWindow = { kind: string; percentUsed: number; resetsAt?: string }
 
 // Background subagents with no model of their own run on a cheap one. Types that pin their
 // own model (searcher, editor, reviewer, savvy-*) and forks keep theirs.
@@ -282,6 +287,66 @@ const fitText = (s: string, size: number, maxW: number): string => {
   return out + '…'
 }
 
+// The savvy pixel bar, shared by the band's rows and the Map's cards: a dithered fill,
+// sparse at the start and dense toward the head, a faint layer for work handed out,
+// ticks between tasks, and a pill with the count riding the head. Pixels twinkle in
+// four out-of-phase groups; a calm bar (finished) settles to a slow glow.
+const BAR_CSS = (isCalm: boolean): string => `<style>
+.t{fill:#1f1f1f}.m{fill:#8a8a8a}.k{fill:#e4e4e2}.tk{fill:#b4b4b0}
+@media (prefers-color-scheme: dark){.t{fill:#ececec}.m{fill:#9a9a9a}.k{fill:#2c2c2c}.tk{fill:#5a5a5a}}
+.t0,.t1,.t2,.t3{animation:tw ${isCalm ? 3.2 : 2.2}s ease-in-out infinite}
+.t1{animation-duration:${isCalm ? 3.8 : 2.8}s;animation-delay:-.7s}.t2{animation-duration:${isCalm ? 4.4 : 1.9}s;animation-delay:-1.3s}.t3{animation-duration:${isCalm ? 3.5 : 3.3}s;animation-delay:-.4s}
+@keyframes tw{0%,100%{opacity:1}50%{opacity:${isCalm ? 0.8 : 0.3}}}
+@media (prefers-reduced-motion: reduce){.t0,.t1,.t2,.t3{animation:none}}
+</style>`
+
+type BarOptions = { run?: number; ticks?: number; rtl?: boolean }
+
+// One bar, drawn at (0, 0) and BAR_W by barH: place it with a translate. `id` keeps its
+// clip path its own, since several bars share one drawing.
+export const barGroup = (id: string, BAR_W: number, barH: number, fill: number, color: string, pill: string, o: BarOptions = {}): string => {
+  const ratioOf = (r: number) => Math.max(0, Math.min(1, r))
+  const fillW = Math.round(BAR_W * ratioOf(fill))
+  const runW = Math.round(BAR_W * ratioOf(o.run ?? 0))
+  const bx = (x: number, w: number): number => (o.rtl ? BAR_W - x - w : x)
+  const cols = Math.floor(fillW / CELL)
+  const rows = Math.floor(barH / CELL)
+  const dots: string[] = []
+  for (let c = 0; c < cols; c++) {
+    const density = 0.35 + 0.6 * Math.pow(c / Math.max(1, cols), 1.2)
+    for (let r = 0; r < rows; r++) {
+      if (noise(c, r) < density) dots.push(`<rect class="t${Math.floor(noise(r, c) * 4)}" x="${bx(c * CELL + 1, 2)}" y="${r * CELL + 1}" width="2" height="2"/>`)
+    }
+  }
+  const faint: string[] = []
+  for (let c = cols; c < Math.floor(runW / CELL); c++) {
+    for (let r = 0; r < rows; r++) {
+      if (noise(c + 7, r + 3) < 0.2) faint.push(`<rect class="t${Math.floor(noise(r + 5, c) * 4)}" x="${bx(c * CELL + 1, 1.7)}" y="${r * CELL + 1}" width="1.7" height="1.7"/>`)
+    }
+  }
+  const ticks: string[] = []
+  for (let i = 1; i < (o.ticks ?? 0); i++) {
+    const x = Math.round((BAR_W * i) / (o.ticks ?? 1))
+    if (x > fillW + 4) ticks.push(`<rect x="${bx(x, 1.5)}" y="${barH / 2 - 4}" width="1.5" height="8" rx="0.75"/>`)
+  }
+  const pillW = pill ? Math.round(18 + pill.length * 6.6) : 0
+  const pillX = bx(Math.max(0, Math.min(BAR_W - pillW, fillW - pillW)), pillW)
+  const clip = `c-${id.replace(/[^\w-]/g, '')}`
+  return `<defs><clipPath id="${clip}"><rect x="0" y="0" width="${BAR_W}" height="${barH}" rx="${barH / 2}"/></clipPath></defs>
+<rect class="k" width="${BAR_W}" height="${barH}" rx="${barH / 2}"/>
+<g clip-path="url(#${clip})">
+<g fill="${color}">${dots.join('')}</g>
+<g fill="${color}" opacity="0.45">${faint.join('')}</g>
+<g class="tk">${ticks.join('')}</g>
+</g>${
+    pill
+      ? `
+<rect x="${pillX}" width="${pillW}" height="${barH}" rx="${barH / 2}" fill="${color}"/>
+<text x="${pillX + pillW / 2}" y="${barH / 2 + 4}" text-anchor="middle"${o.rtl ? ' direction="rtl"' : ''} font-family="${FONT}" font-size="11" font-weight="600" fill="#ffffff">${xml(pill)}</text>`
+      : ''
+  }`
+}
+
 const rowSvg = (f: Flow, W: number, isWorking: boolean): string => {
   // The title takes what it needs, up to 40% of the row; the bar takes the rest.
   const title = fitText(f.title, 13, Math.max(60, W * 0.4))
@@ -289,73 +354,86 @@ const rowSvg = (f: Flow, W: number, isWorking: boolean): string => {
   const BAR_W = Math.max(60, W - BAR_X - 46 - CRAB_W)
   const color = f.isFinished ? DONE : ACCENT
   const y0 = (H - BAR_H) / 2
-  const fillW = Math.round(BAR_W * ratio(f))
-  const runW = f.total ? Math.round((BAR_W * Math.min(f.total, f.done + f.running)) / f.total) : 0
-  const dots: string[] = []
-  // Positions are worked out left to right; right to left mirrors each box
-  // inside the bar (`bx`) and across the row (`rx`). Text is never mirrored.
+  const run = f.total ? Math.min(f.total, f.done + f.running) / f.total : 0
+  // Positions are worked out left to right; right to left mirrors each box across
+  // the row (`rx`) and the bar inside itself. Text is never mirrored.
   const rtl = isRtl()
-  const bx = (x: number, w: number): number => (rtl ? BAR_W - x - w : x)
   const rx = (x: number, w: number): number => (rtl ? W - x - w : x)
-
-  // Dithered fill: sparse at the start, dense toward the head.
-  const cols = Math.floor(fillW / CELL)
-  const rows = Math.floor(BAR_H / CELL)
-  for (let c = 0; c < cols; c++) {
-    const density = 0.35 + 0.6 * Math.pow(c / Math.max(1, cols), 1.2)
-    for (let r = 0; r < rows; r++) {
-      if (noise(c, r) < density) dots.push(`<rect class="t${Math.floor(noise(r, c) * 4)}" x="${bx(c * CELL + 1, 2)}" y="${r * CELL + 1}" width="2" height="2"/>`)
-    }
-  }
-  // Handed to workers, not yet accepted: a faint second layer.
-  const faint: string[] = []
-  for (let c = cols; c < Math.floor(runW / CELL); c++) {
-    for (let r = 0; r < rows; r++) {
-      if (noise(c + 7, r + 3) < 0.2) faint.push(`<rect class="t${Math.floor(noise(r + 5, c) * 4)}" x="${bx(c * CELL + 1, 1.7)}" y="${r * CELL + 1}" width="1.7" height="1.7"/>`)
-    }
-  }
-
-  const ticks: string[] = []
-  for (let i = 1; i < f.total; i++) {
-    const x = Math.round((BAR_W * i) / f.total)
-    if (x > fillW + 4) ticks.push(`<rect x="${bx(x, 1.5)}" y="${BAR_H / 2 - 4}" width="1.5" height="8" rx="0.75"/>`)
-  }
-
-  const text = label(f)
-  const pillW = Math.round(18 + text.length * 6.6)
-  const pillX = bx(Math.max(0, Math.min(BAR_W - pillW, fillW - pillW)), pillW)
   const percent = `${Math.round(ratio(f) * 100)}%`
   // `direction="rtl"` puts Hebrew words and numbers in reading order; `start` is then the right edge.
   const titleAt = rtl ? `x="${W - 16}" direction="rtl" text-anchor="start"` : 'x="16"'
   const percentAt = rtl ? `x="${CRAB_W + 6}" y="${H / 2 + 4.5}"` : `x="${W - CRAB_W - 6}" y="${H / 2 + 4.5}" text-anchor="end"`
   const crabW = CRAB_BOX * 0.8
-
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
-<style>
-.t{fill:#1f1f1f}.m{fill:#8a8a8a}.k{fill:#e4e4e2}.tk{fill:#b4b4b0}
-@media (prefers-color-scheme: dark){.t{fill:#ececec}.m{fill:#9a9a9a}.k{fill:#2c2c2c}.tk{fill:#5a5a5a}}
-/* Pixels twinkle in four out-of-phase groups; a finished bar settles to a slow glow. */
-.t0,.t1,.t2,.t3{animation:tw ${f.isFinished ? 3.2 : 2.2}s ease-in-out infinite}
-.t1{animation-duration:${f.isFinished ? 3.8 : 2.8}s;animation-delay:-.7s}.t2{animation-duration:${f.isFinished ? 4.4 : 1.9}s;animation-delay:-1.3s}.t3{animation-duration:${f.isFinished ? 3.5 : 3.3}s;animation-delay:-.4s}
-@keyframes tw{0%,100%{opacity:1}50%{opacity:${f.isFinished ? 0.8 : 0.3}}}
-@media (prefers-reduced-motion: reduce){.t0,.t1,.t2,.t3{animation:none}}
-</style>
-<defs><clipPath id="c"><rect x="0" y="0" width="${BAR_W}" height="${BAR_H}" rx="${BAR_H / 2}"/></clipPath></defs>
+${BAR_CSS(f.isFinished)}
 <circle cx="${rtl ? W - 5 : 5}" cy="${H / 2}" r="4" fill="${color}"/>
 <text class="t" ${titleAt} y="${H / 2 + 4.5}" font-family="${FONT}" font-size="13" font-weight="500">${xml(title)}</text>
-<g transform="translate(${rx(BAR_X, BAR_W)},${y0})">
-<rect class="k" width="${BAR_W}" height="${BAR_H}" rx="${BAR_H / 2}"/>
-<g clip-path="url(#c)">
-<g fill="${color}">${dots.join('')}</g>
-<g fill="${color}" opacity="0.45">${faint.join('')}</g>
-<g class="tk">${ticks.join('')}</g>
-</g>
-<rect x="${pillX}" width="${pillW}" height="${BAR_H}" rx="${BAR_H / 2}" fill="${color}"/>
-<text x="${pillX + pillW / 2}" y="${BAR_H / 2 + 4}" text-anchor="middle"${rtl ? ' direction="rtl"' : ''} font-family="${FONT}" font-size="11" font-weight="600" fill="#ffffff">${xml(text)}</text>
-</g>
+<g transform="translate(${rx(BAR_X, BAR_W)},${y0})">${barGroup('flow', BAR_W, BAR_H, ratio(f), color, label(f), { run, ticks: f.total, rtl })}</g>
 <text class="m" ${percentAt} font-family="${FONT}" font-size="12.5" font-variant-numeric="tabular-nums">${percent}</text>
 ${CRAB_CSS}${crab(rx(W - CRAB_W + 1, crabW), 0, 'other', false, isWorking, 0.8, rtl)}
 </svg>`
+}
+
+// The band's USAGE row, laid out as the FLOW row is: the plan windows ribbon reads
+// (7-day, 5-hour) share the row's width, each a pixel bar of what is left.
+const USAGE_COLOR: Record<string, string> = { seven_day: '#D97757', five_hour: '#E0B34A' }
+const LOW = '#D0453F'
+const windowName = (kind: string): string => (kind === 'seven_day' ? '7D' : kind === 'five_hour' ? '5H' : kind.replace(/_/g, ' ').toUpperCase().slice(0, 6))
+export const resetIn = (iso: string | undefined, at: number): string => {
+  const ms = iso ? Date.parse(iso) - at : NaN
+  if (Number.isNaN(ms)) return ''
+  if (ms <= 0) return 'now'
+  const mins = Math.round(ms / 60000)
+  if (mins < 60) return `${mins}m`
+  const h = Math.floor(mins / 60)
+  return h < 24 ? `${h}h ${mins % 60}m` : `${Math.floor(h / 24)}d ${h % 24}h`
+}
+export const usageSvg = (ws: readonly UsageWindow[], W: number, at: number): string => {
+  const right = W - CRAB_W - 6
+  const GAP = 18
+  const seg = (right - 16 - GAP * (ws.length - 1)) / Math.max(1, ws.length)
+  const body = ws.map((w, i) => {
+    const left = Math.max(0, Math.min(100, Math.round(100 - w.percentUsed)))
+    const color = left < 20 ? LOW : (USAGE_COLOR[w.kind] ?? ACCENT)
+    const x = 16 + i * (seg + GAP)
+    const name = windowName(w.kind)
+    const reset = resetIn(w.resetsAt, at)
+    const nameW = Math.round(textWidth(name, 12) + 8)
+    const resetW = reset ? Math.round(textWidth(reset, 11) + 8) : 0
+    const barW = Math.max(40, seg - nameW - resetW)
+    return `<text class="m" x="${x}" y="${H / 2 + 4.5}" font-family="${FONT}" font-size="12" font-weight="600">${name}</text>
+<g transform="translate(${x + nameW},${(H - BAR_H) / 2})">${barGroup(`u-${w.kind}`, barW, BAR_H, left / 100, color, `${left}%`)}</g>
+${reset ? `<text class="m" x="${x + seg}" y="${H / 2 + 4.5}" text-anchor="end" font-family="${FONT}" font-size="11" font-variant-numeric="tabular-nums">${reset}</text>` : ''}`
+  })
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+${BAR_CSS(false)}
+<circle cx="5" cy="${H / 2}" r="4" fill="#8a8a8a" class="m"/>
+${body.join('')}
+</svg>`
+}
+
+// The band above the prompt, in the panel's look: one card holding the FLOW row (the
+// savvy-flow plan) and the USAGE row (ribbon's plan windows), each bar filling its row.
+// ribbon and ponytail draw their own rows beneath this one; once they ran (next.trace)
+// this band stands in for them, so their rows are dropped.
+const BAND_PAD = 8
+const BAND_GAP = 6
+const BAND_CSS = `<style>.tile{fill:#f4f3f0}.ln{stroke:#e4e4e1}
+@media (prefers-color-scheme: dark){.tile{fill:#262625}.ln{stroke:#333331}}</style>`
+export const bandHeight = (rows: number): number => BAND_PAD * 2 + rows * H + (rows - 1) * BAND_GAP
+export const bandSvg = (W: number, rows: readonly string[]): string => {
+  const BH = bandHeight(rows.length)
+  const inner = rows.map((r, i) => `<svg x="${BAND_PAD}" y="${BAND_PAD + i * (H + BAND_GAP)}" width="${W - BAND_PAD * 2}" height="${H}" overflow="visible">${r.replace(/^<svg[^>]*>|<\/svg>\s*$/g, '')}</svg>`)
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${BH}" viewBox="0 0 ${W} ${BH}">${BAND_CSS}
+<rect class="tile ln" x="0.5" y="0.5" width="${W - 1}" height="${BH - 1}" rx="10" stroke-width="1"/>
+${inner.join('\n')}
+</svg>`
+}
+
+// The terminal's bar: savvy-progress's block bar.
+const blocks = (r: number, cells: number): string => {
+  const n = Math.max(0, Math.min(cells, Math.round(r * cells)))
+  return '█'.repeat(n) + '░'.repeat(cells - n)
 }
 
 const barText = (f: Flow, width: number): string => {
@@ -649,7 +727,8 @@ const CRAB_SCALE = 1.1
 // Body and props nest inside `bd` so a prop rides the bob and adds its own motion;
 // legs stay outside it and step on their own. `mirror` flips the crab inside its
 // own box (x .. x + CRAB_BOX * scale) so it faces left.
-const crab = (x: number, y: number, costume: string, dim = false, isWalking = false, scale = CRAB_SCALE, mirror = false): string => {
+// `tint` recolours the body: background tasks are smaller crabs in their own colour.
+const crab = (x: number, y: number, costume: string, dim = false, isWalking = false, scale = CRAB_SCALE, mirror = false, tint?: string): string => {
   const groups = new Map<string, string[]>([['bd', []]])
   const f: Fill = (cx, cy, w, h, c, cls = 'bd') => {
     if (!groups.has(cls)) groups.set(cls, [])
@@ -661,7 +740,8 @@ const crab = (x: number, y: number, costume: string, dim = false, isWalking = fa
   const props = [...groups.keys()].filter(k => k !== 'bd' && k !== 'la' && k !== 'lb')
   const body = `<g class="bd">${(groups.get('bd') ?? []).join('')}${props.map(group).join('')}</g>`
   const place = mirror ? `translate(${x + CRAB_BOX * scale},${y}) scale(${-scale},${scale})` : `translate(${x},${y}) scale(${scale})`
-  return `<g transform="${place}" opacity="${dim ? 0.45 : 1}" shape-rendering="crispEdges"><g class="c-${costume}${isWalking ? ' run' : ''}">${body}${group('la')}${group('lb')}</g></g>`
+  const out = `<g transform="${place}" opacity="${dim ? 0.45 : 1}" shape-rendering="crispEdges"><g class="c-${costume}${isWalking ? ' run' : ''}">${body}${group('la')}${group('lb')}</g></g>`
+  return tint ? out.replaceAll(`fill="${CLAY}"`, `fill="${tint}"`) : out
 }
 
 const statusMark = (x: number, y: number, status: string, color: string): string => {
@@ -793,121 +873,351 @@ const compactSvg = (W: number, list: AgentRun[], planned: Planned[], t: ReturnTy
   )
 }
 
-// --- the desktop Map as a quest map: each file an island (a house when edited, a scroll when
-// only read), its relative imports the marching roads between islands, and the crabs of the
-// agents that touched it standing on it, at work while they run. Edits and reads earn XP.
-const MAP_TOP = 44
-const MAP_TILE_H = 104
-const MAP_LEGEND = 24
-const MAP_CREW = 4
-const mapCols = (W: number): number => Math.max(2, Math.floor(W / 140))
-const mapHeight = (W: number, n: number): number => MAP_TOP + Math.ceil(n / mapCols(W)) * MAP_TILE_H + MAP_LEGEND
-const stripExt = (p: string): string => p.replace(/\.(tsx?|jsx?|mjs|cjs|py|php)$/, '')
-const XP_EDIT = 10
-const XP_READ = 1
-const XP_LEVEL = 25
+// --- the desktop Map: one card per subagent and background task, with what each is
+// working on: the files it reads and edits, the commands it runs, what it searches.
+// --- the desktop Map: the project as graphify maps it (graphify-out/graph.json), one card
+// per community of code, linked where the code calls across, with a crab on the card each
+// agent, subagent and background task is working in. Work outside the code (commands,
+// web, searches, background tasks) sits on its own card.
+export const GRAPH = 'graphify-out/graph.json'
+const MAP_MAX = 12
+const LIVE_MS = 90_000
+const CARD_H = 92
+const CARD_GAP = 14
+const MAP_PAD = 4
+const mapCols = (W: number): number => Math.max(1, Math.min(4, Math.floor(W / 230)))
+const mapHeight = (W: number, n: number): number => MAP_PAD * 2 + Math.ceil(n / mapCols(W)) * (CARD_H + CARD_GAP) - CARD_GAP + 22
 
-const MAP_CSS = `<style>
-.sea{fill:#e7f0f4}.isl{fill:#eef6e6;stroke:#b9d6a3}.isl.ed{fill:#fff6e0;stroke:#e0b34a}
-.road{stroke:#b49a74}.lbl{fill:#2a2a28}.sub{fill:#7a7a75}.xpk{fill:#ecebe8}
-@media (prefers-color-scheme: dark){.sea{fill:#1b2327}.isl{fill:#24301f;stroke:#3f5a33}.isl.ed{fill:#3a301a;stroke:#a8842e}.road{stroke:#7d6a50}.lbl{fill:#ececec}.sub{fill:#9a9a96}.xpk{fill:#2c2c2b}}
-.road{stroke-dasharray:4 4;animation:march 1.2s linear infinite}@keyframes march{to{stroke-dashoffset:-16}}
-.spark{animation:spark 1s steps(2) infinite}@keyframes spark{50%{opacity:0;transform:translateY(-3px)}}
-.gain{animation:gain 2.4s ease-out infinite}@keyframes gain{0%{opacity:0;transform:translateY(4px)}30%{opacity:1}100%{opacity:0;transform:translateY(-8px)}}
-.flagw{transform-box:fill-box;transform-origin:0 50%;animation:wave .6s steps(1) infinite}
-@media (prefers-reduced-motion: reduce){.road,.spark,.gain,.flagw{animation:none}}
-</style>`
-
-const HOUSE = ['...rr...', '..rrrr..', '.rrrrrr.', 'rrrrrrrr', '.wwwwww.', '.wwddww.', '.wwddww.', '.wwddww.']
-const SCROLL = ['pppppppp', '.ssssss.', '.skkkks.', '.ssssss.', '.skkkks.', '.ssssss.', '.skkks..', 'pppppppp']
-const pix = (x: number, y: number, rows: string[], colors: Record<string, string>, size = 2): string =>
-  rows
-    .flatMap((row, dy) => [...row].map((ch, dx) => (colors[ch] ? `<rect x="${x + dx * size}" y="${y + dy * size}" width="${size}" height="${size}" fill="${colors[ch]}"/>` : '')))
-    .join('')
-
-const mapXp = (nodes: FileNode[]) => {
-  const edited = nodes.filter(n => n.mode === 'edit').length
-  const xp = edited * XP_EDIT + (nodes.length - edited) * XP_READ
-  return { edited, xp, level: Math.floor(xp / XP_LEVEL) + 1 }
+const KIND: Record<WorkKind, [glyph: string, color: string, word: string]> = {
+  read: ['◇', '#6AAABD', 'read'],
+  edit: ['✎', '#D97757', 'edit'],
+  cli: ['❯', '#5FBF8F', 'command'],
+  search: ['⌕', '#C9A227', 'search'],
+  web: ['◎', '#8F8CF4', 'web'],
 }
 
-const mapSvg = (W: number, nodes: FileNode[], list: AgentRun[]): string => {
-  const cols = mapCols(W)
-  const tw = W / cols
-  const H = mapHeight(W, nodes.length)
-  const spot = (i: number) => ({ x: (i % cols) * tw, y: MAP_TOP + Math.floor(i / cols) * MAP_TILE_H })
-  const index = new Map(nodes.map((n, i) => [stripExt(n.path), i]))
-  const { xp, level } = mapXp(nodes)
-  const xpW = 90
-  const xpFill = Math.round((xpW * (xp % XP_LEVEL)) / XP_LEVEL)
-  const working = list.filter(a => a.status === 'running' && nodes.some(n => n.who.includes(a.agentId ?? ''))).length
+// Background tasks: small crabs, each in its own colour.
+const BG_TINTS = ['#4FA3A5', '#8F8CF4', '#5B8DEF', '#C9A227', '#D96BA0', '#7FB069']
+const tintOf = (id: string): string => BG_TINTS[[...id].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7) % BG_TINTS.length] ?? '#4FA3A5'
+const BG_SCALE = 0.6
 
-  const roads = nodes.flatMap((n, i) =>
-    n.imports.flatMap(imp => {
-      const j = index.get(imp)
-      if (j === undefined || j === i) return []
-      const a = spot(i)
-      const b = spot(j)
-      const x1 = a.x + tw / 2
-      const y1 = a.y + MAP_TILE_H / 2
-      const x2 = b.x + tw / 2
-      const y2 = b.y + MAP_TILE_H / 2
-      return [`<path class="road" d="M${x1} ${y1} Q${(x1 + x2) / 2} ${Math.min(y1, y2) - 30} ${x2} ${y2}" fill="none" stroke-width="2.5" stroke-linecap="round"/>`]
+const pathKey = (p: string): string => p.replace(/\\/g, '/').replace(/^\.\//, '').toLowerCase()
+
+// A community's name as graphify gave it, shortened to the last two parts of a path.
+const shortName = (name: string): string => {
+  const parts = name.replace(/\\/g, '/').split('/').filter(Boolean)
+  return (parts.length > 1 ? parts.slice(-2).join('/') : name).replace(/\.(tsx?|jsx?|mjs|cjs|py|php|md)$/, '')
+}
+
+// graph.json to the few cards the panel draws: the largest communities, their files,
+// and how many calls and references cross between each pair.
+export const projectOf = (raw: string, mtimeMs: number): ProjectMap => {
+  type Node = { id?: unknown; community?: unknown; community_name?: unknown; source_file?: unknown }
+  type Link = { source?: unknown; target?: unknown }
+  const g = JSON.parse(raw) as { nodes?: Node[]; links?: Link[]; edges?: Link[] }
+  const byId = new Map<string, number>()
+  const groups = new Map<number, { name: string; files: Set<string>; symbols: number }>()
+  for (const n of g.nodes ?? []) {
+    if (typeof n.community !== 'number' || typeof n.id !== 'string') continue
+    byId.set(n.id, n.community)
+    const cur = groups.get(n.community) ?? { name: typeof n.community_name === 'string' ? n.community_name : `Community ${n.community}`, files: new Set<string>(), symbols: 0 }
+    cur.symbols++
+    if (typeof n.source_file === 'string' && n.source_file) cur.files.add(pathKey(n.source_file))
+    groups.set(n.community, cur)
+  }
+  const kept = [...groups.entries()].sort((a, b) => b[1].files.size - a[1].files.size || b[1].symbols - a[1].symbols).slice(0, MAP_MAX)
+  const keptIds = new Set(kept.map(([id]) => id))
+  const weights = new Map<string, number>()
+  for (const l of g.links ?? g.edges ?? []) {
+    const a = typeof l.source === 'string' ? byId.get(l.source) : undefined
+    const b = typeof l.target === 'string' ? byId.get(l.target) : undefined
+    if (a === undefined || b === undefined || a === b || !keptIds.has(a) || !keptIds.has(b)) continue
+    const k = a < b ? `${a}:${b}` : `${b}:${a}`
+    weights.set(k, (weights.get(k) ?? 0) + 1)
+  }
+  const links = [...weights.entries()].map(([k, w]): [number, number, number] => {
+    const [a, b] = k.split(':').map(Number)
+    return [a ?? 0, b ?? 0, w]
+  })
+  // Order the cards so linked ones sit side by side: start from the largest, then take
+  // whichever card is most linked to those already placed.
+  const order: number[] = []
+  const left = new Set(kept.map(([id]) => id))
+  const pull = (id: number) => links.reduce((s, [a, b, w]) => s + ((a === id && order.includes(b)) || (b === id && order.includes(a)) ? w : 0), 0)
+  while (left.size > 0) {
+    const pick = order.length === 0 ? kept[0]![0] : [...left].sort((x, y) => pull(y) - pull(x))[0]!
+    order.push(pick)
+    left.delete(pick)
+  }
+  const info = new Map(kept)
+  return {
+    mtimeMs,
+    total: groups.size,
+    communities: order.map(id => {
+      const c = info.get(id)!
+      return { id, name: shortName(c.name), files: [...c.files].slice(0, 400), symbols: c.symbols }
     }),
-  )
+    links: links.sort((a, b) => b[2] - a[2]).slice(0, 24),
+  }
+}
 
-  const islands = nodes.map((n, i) => {
-    const isEdit = n.mode === 'edit'
+// Who is on the map: the main session, each subagent and each background task, with the
+// last thing each worked on.
+export type Crew = {
+  key: string
+  name: string
+  costume: string
+  tint?: string
+  isRunning: boolean
+  item?: WorkItem
+}
+
+export const crewOf = (list: AgentRun[], bgs: BgTask[], items: WorkItem[], at: number): Crew[] => {
+  const last = (who: string) => [...items].reverse().find(w => w.who === who)
+  const crew: Crew[] = []
+  const main = last('main')
+  if (main && at - main.at < LIVE_MS) crew.push({ key: 'main', name: 'main', costume: 'other', isRunning: true, item: main })
+  for (const a of list) {
+    if (a.status !== 'running' || !a.agentId) continue
+    crew.push({ key: a.id, name: a.description || a.type, costume: costumeOf(a), isRunning: true, item: last(a.agentId) })
+  }
+  for (const t of bgs) {
+    if (t.status !== 'running') continue
+    crew.push({ key: t.id, name: t.label, costume: 'other', tint: tintOf(t.id), isRunning: true, item: { who: t.id, kind: 'cli', label: t.label, at: t.startedAt } })
+  }
+  return crew
+}
+
+// Each crew member on the card of the community holding the file it last worked on;
+// anything else (a command, the web, a search, a file outside the graph) is off the code.
+export const OFF_CODE = -1
+// Work paths are absolute and graph paths relative to where graphify ran: match the tail.
+export const inFile = (path: string, file: string): boolean => {
+  const k = pathKey(path)
+  return k === file || k.endsWith(`/${file}`)
+}
+export const placeCrew = (p: ProjectMap | null, crew: readonly Crew[]): Map<number, Crew[]> => {
+  const out = new Map<number, Crew[]>()
+  for (const m of crew) {
+    const path = m.item?.path
+    const id = path ? (p?.communities.find(c => c.files.some(f => inFile(path, f)))?.id ?? OFF_CODE) : OFF_CODE
+    out.set(id, [...(out.get(id) ?? []), m])
+  }
+  return out
+}
+
+const MAP_CSS = `<style>
+.card{fill:#f4f3f0;stroke:#e4e4e1}.card.on{fill:#fdf5e9;stroke:#e0b34a}.wire{stroke:#c9c8c3}
+@media (prefers-color-scheme: dark){.card{fill:#232322;stroke:#333331}.card.on{fill:#2f271c;stroke:#e0b34a}.wire{stroke:#46453f}}
+.wire{stroke-dasharray:3 4}
+</style>`
+
+const crewCrab = (m: Crew, x: number, y: number): string =>
+  m.tint ? crab(x + 3, y + 5, 'other', false, m.isRunning, BG_SCALE, false, m.tint) : crab(x, y, m.costume, false, m.isRunning, 0.75)
+
+const mapSvg = (W: number, p: ProjectMap, placed: Map<number, Crew[]>, touched: readonly string[]): string => {
+  const off = placed.get(OFF_CODE) ?? []
+  const cards = [...p.communities.map(c => ({ id: c.id, c })), ...(off.length ? [{ id: OFF_CODE, c: null }] : [])]
+  const cols = mapCols(W)
+  const cw = (W - MAP_PAD * 2 - (cols - 1) * CARD_GAP) / cols
+  const spot = (i: number) => ({ x: MAP_PAD + (i % cols) * (cw + CARD_GAP), y: MAP_PAD + Math.floor(i / cols) * (CARD_H + CARD_GAP) })
+  const index = new Map(cards.map((k, i) => [k.id, i]))
+  const H = mapHeight(W, cards.length)
+
+  const wires = p.links.flatMap(([a, b, w]) => {
+    const i = index.get(a)
+    const j = index.get(b)
+    if (i === undefined || j === undefined) return []
     const s = spot(i)
-    const x = s.x + 5
-    const y = s.y + 5
-    const w = tw - 10
-    const h = MAP_TILE_H - 10
-    const parts = n.path.split('/')
-    const name = parts[parts.length - 1] ?? n.path
-    const dir = parts.slice(-3, -1).join('/')
-    const icon = isEdit
-      ? pix(x + 8, y + 8, HOUSE, { r: CLAY, w: '#F4EBD9', d: '#7A4A26' })
-      : pix(x + 8, y + 8, SCROLL, { p: '#B48A5A', s: '#F3E6C8', k: '#9A8A6A' })
-    const flag = isEdit
-      ? `<rect x="${x + w - 18}" y="${y + 6}" width="1.5" height="16" fill="#8E929A"/><rect class="flagw" x="${x + w - 16.5}" y="${y + 6}" width="9" height="6" fill="#E0B34A"/>
-<text class="gain" x="${x + w - 30}" y="${y + 36}" font-family="${FONT}" font-size="9" font-weight="700" fill="#C99A1E">+${XP_EDIT}xp</text>`
-      : ''
-    const crew = n.who.slice(0, MAP_CREW).map((id, k) => {
-      const agent = id === 'main' ? undefined : list.find(a => a.agentId === id)
-      const isRunning = agent?.status === 'running'
-      const cx = x + 6 + k * 28
-      const cy = y + h - 30
-      const spark =
-        agent && isRunning
-          ? `<text class="spark" x="${cx + 18}" y="${cy + 6}" font-family="${FONT}" font-size="10" fill="${colorOf(costumeOf(agent))}">✦</text>`
-          : ''
-      return crab(cx, cy, agent ? costumeOf(agent) : 'other', agent?.status === 'failed', isRunning, 0.85) + spark
-    })
-    const more = n.who.length > MAP_CREW ? `<text class="sub" x="${x + 6 + MAP_CREW * 28}" y="${y + h - 12}" font-family="${FONT}" font-size="10">+${n.who.length - MAP_CREW}</text>` : ''
-    return `<rect class="isl${isEdit ? ' ed' : ''}" x="${x}" y="${y}" width="${w}" height="${h}" rx="12" stroke-width="1.5"/>
-${icon}${flag}
-<text class="lbl" x="${x + 30}" y="${y + 18}" font-family="${FONT}" font-size="11" font-weight="700">${xml(fitText(name, 11, w - 56))}</text>
-${dir ? `<text class="sub" x="${x + 30}" y="${y + 30}" font-family="${FONT}" font-size="9">${xml(fitText(dir, 9, w - 56))}</text>` : ''}
-${crew.join('')}${more}`
+    const t = spot(j)
+    const sameRow = s.y === t.y
+    const [x1, y1, x2, y2] = sameRow
+      ? [s.x + (s.x < t.x ? cw : 0), s.y + CARD_H / 2, t.x + (s.x < t.x ? 0 : cw), t.y + CARD_H / 2]
+      : [s.x + cw / 2, s.y + (s.y < t.y ? CARD_H : 0), t.x + cw / 2, t.y + (s.y < t.y ? 0 : CARD_H)]
+    const bend = sameRow ? `C${(x1 + x2) / 2} ${y1} ${(x1 + x2) / 2} ${y2}` : `C${x1} ${(y1 + y2) / 2} ${x2} ${(y1 + y2) / 2}`
+    return [`<path class="wire" d="M${x1} ${y1} ${bend} ${x2} ${y2}" fill="none" stroke-width="${Math.min(3, 1 + Math.log2(w) / 2)}"/>`]
   })
 
-  const stats = `${nodes.length} islands · ${roads.length} roads · ${working} crew${working === 1 ? '' : 's'} at work`
-  const legend = `🏠 edited +${XP_EDIT}xp   📜 read +${XP_READ}xp   ┄ import road   ✦ at work`
+  const body = cards.map((k, i) => {
+    const { x, y } = spot(i)
+    const crew = placed.get(k.id) ?? []
+    const isLive = crew.length > 0
+    const latest = [...crew].filter(m => m.item).sort((a, b) => (b.item?.at ?? 0) - (a.item?.at ?? 0))[0]
+    const textW = cw - 24 - Math.min(3, crew.length) * 22
+    const name = k.c ? k.c.name : 'Terminal & web'
+    const files = k.c?.files ?? []
+    const hit = files.filter(f => touched.some(t => inFile(t, f))).length
+    const sub = k.c ? `${files.length} file${files.length === 1 ? '' : 's'} · ${k.c.symbols} symbols` : `${off.length} running off the code`
+    const action = latest?.item
+      ? `<text x="${x + 12}" y="${y + 56}" font-family="${FONT}" font-size="11"><tspan fill="${KIND[latest.item.kind][1]}">${KIND[latest.item.kind][0]}</tspan><tspan class="t" dx="6">${xml(fitText(latest.item.label, 11, cw - 70))}</tspan><tspan class="m" dx="6">${xml(fitText(latest.name, 10, 80))}</tspan></text>`
+      : `<text class="m" x="${x + 12}" y="${y + 56}" font-family="${FONT}" font-size="11">${hit ? `${hit} touched this session` : 'quiet'}</text>`
+    const bar = k.c
+      ? `<g transform="translate(${x + 12},${y + 70})">${barGroup(`m-${k.id}`, cw - 24, 9, files.length ? hit / files.length : 0, isLive ? '#E0B34A' : ACCENT, '')}</g>`
+      : ''
+    const crabs = crew
+      .slice(0, 3)
+      .map((m, n) => crewCrab(m, x + cw - 30 - n * 22, y + 8))
+      .join('')
+    const more = crew.length > 3 ? `<text class="m" x="${x + cw - 96}" y="${y + 22}" font-family="${FONT}" font-size="10" text-anchor="end">+${crew.length - 3}</text>` : ''
+    return `<rect class="card${isLive ? ' on' : ''}" x="${x}" y="${y}" width="${cw}" height="${CARD_H}" rx="10" stroke-width="1.2"/>
+<text class="t" x="${x + 12}" y="${y + 21}" font-family="${FONT}" font-size="12" font-weight="600">${xml(fitText(name, 12, textW))}</text>
+<text class="s" x="${x + 12}" y="${y + 36}" font-family="${FONT}" font-size="10">${xml(fitText(sub, 10, textW))}</text>
+${action}${bar}${crabs}${more}`
+  })
+  const hidden = p.total - p.communities.length
+  const legend = (Object.keys(KIND) as WorkKind[]).map(k => `<tspan fill="${KIND[k][1]}">${KIND[k][0]}</tspan> ${KIND[k][2]}`).join('   ')
   return svg(
     W,
-    mapHeight(W, nodes.length),
-    `${MAP_CSS}
-<text class="lbl" x="2" y="17" font-family="${FONT}" font-size="13" font-weight="800" letter-spacing="1.5">🗺 QUEST MAP</text>
-<text class="sub" x="2" y="33" font-family="${FONT}" font-size="10">${stats}</text>
-<text class="lbl" x="${W - xpW - 8}" y="17" font-family="${FONT}" font-size="11" font-weight="800" text-anchor="end">LV ${level}</text>
-<rect class="xpk" x="${W - xpW - 2}" y="9" width="${xpW}" height="8" rx="4"/><rect x="${W - xpW - 2}" y="9" width="${xpFill}" height="8" rx="4" fill="#E0B34A"/>
-<text class="sub" x="${W - 2}" y="31" font-family="${FONT}" font-size="9" text-anchor="end" font-variant-numeric="tabular-nums">${xp % XP_LEVEL}/${XP_LEVEL} xp</text>
-<rect class="sea" x="0" y="${MAP_TOP - 4}" width="${W}" height="${H - MAP_TOP - MAP_LEGEND + 6}" rx="14"/>
-${roads.join('')}
-${islands.join('')}
-<text class="sub" x="2" y="${H - 7}" font-family="${FONT}" font-size="10">${legend}</text>`,
+    H,
+    `${MAP_CSS}${BAR_CSS(false)}
+${wires.join('')}
+${body.join('')}
+<text class="s" x="${MAP_PAD}" y="${H - 6}" font-family="${FONT}" font-size="10">${legend}${hidden > 0 ? `   · ${hidden} smaller communities not shown` : ''}</text>`,
   )
+}
+
+
+// The graph is read once per change: the panel checks its mtime on each draw. graphify
+// writes it where it ran, which may be a folder or two above the session's own.
+const GRAPH_DIRS = ['', '../', '../../', '../../../']
+let projectCache: { at: string; mtimeMs: number; map: ProjectMap | null; note: string } | null = null
+const loadProject = async ($: EngineInterface): Promise<{ map: ProjectMap | null; note: string; root: string }> => {
+  for (const dir of GRAPH_DIRS) {
+    const at = `${dir}${GRAPH}`
+    const st = await $.fs.stat(at).catch(() => null)
+    if (!st || st.kind !== 'file') continue
+    if (projectCache?.at === at && projectCache.mtimeMs === st.mtimeMs) return { ...projectCache, root: dir || '.' }
+    let map: ProjectMap | null = null
+    let note = ''
+    if (st.size > 4 * 1024 * 1024) note = 'graph.json is over 4 MiB, too large to read'
+    else {
+      try {
+        map = projectOf(await $.fs.read(at), st.mtimeMs)
+      } catch {
+        note = 'graph.json could not be read'
+      }
+    }
+    projectCache = { at, mtimeMs: st.mtimeMs, map, note }
+    return { map, note, root: dir || '.' }
+  }
+  return { map: null, note: '', root: '.' }
+}
+
+let isBuilding = false
+const buildProject = async ($: EngineInterface, root: string): Promise<void> => {
+  if (isBuilding) return
+  isBuilding = true
+  $.ui.toast('graphify: mapping the project…')
+  try {
+    const r = await $.process.run(['graphify', 'update', '.'], { cwd: root, timeoutMs: 600_000 })
+    $.ui.toast(r.exitCode === 0 ? 'graphify: project map ready' : `graphify failed (exit ${r.exitCode})`)
+  } catch {
+    $.ui.toast('graphify is not installed: pip install graphifyy')
+  } finally {
+    isBuilding = false
+    await $.ui.invalidate('ui.render')
+  }
+}
+
+// A background task as a panel row: a small crab in the task's own colour.
+const BG_ROW_H = 30
+const bgRowSvg = (W: number, t: BgTask, at: number): string => {
+  const tint = tintOf(t.id)
+  const time = fmtTime((t.endedAt ?? Math.max(at, t.startedAt)) - t.startedAt)
+  return svg(
+    W,
+    BG_ROW_H,
+    `${crab(mx(W, 6, crabWidth(BG_SCALE)), 6, 'other', t.status === 'failed', t.status === 'running', BG_SCALE, isRtl(), tint)}
+<text class="t" ${startText(W, 34, 19)} font-family="${FONT}" font-size="12">${xml(fitText(t.label, 12, W - 150))}</text>
+<text class="s" ${endText(W, W - 28, 19)} font-family="${FONT}" font-size="10">${t.kind} · ${time}</text>
+${statusMark(mx(W, W - 12), 15, t.status, tint)}`,
+  )
+}
+
+// --- Skills and plugins: what the session has loaded or called, each with its own crab.
+// Active means used in the last few minutes; the rest are enabled plugins and skills used
+// earlier. Their tints are a palette of their own, apart from subagent tiers and tasks.
+const SKILL_TINTS = ['#F4D35E', '#EE964B', '#FF6B6B', '#2EC4B6', '#C3B1E1', '#F7A1C4', '#A3E635', '#FDBA74']
+const skillTint = (name: string): string =>
+  SKILL_TINTS[[...name].reduce((h, ch) => (h * 33 + ch.charCodeAt(0)) >>> 0, 11) % SKILL_TINTS.length] ?? '#F4D35E'
+const SKILL_LIVE_MS = 5 * 60_000
+const SKILL_SCALE = 0.7
+const SKILL_ROW_H = 30
+const SKILL_MAX = 14
+// Tools of the app itself and of this plugin are not skills the person added.
+const SKIP_SERVERS = /^(ccd_|savvy-progress$|claude_ai_)/
+
+// What a tool call says about a skill or plugin in use, or null for any other call.
+export const kitOf = (tool: string, e: Record<string, unknown>): [kind: SkillKind, name: string] | null => {
+  if (tool === 'Skill' && typeof e.skill === 'string' && e.skill) return ['skill', e.skill.replace(/^\//, '')]
+  const m = /^mcp__(.+?)__/.exec(tool)
+  if (!m?.[1] || SKIP_SERVERS.test(m[1])) return null
+  // A plugin's own server is named plugin_<plugin>_<server>.
+  const plugin = /^plugin_(.+)_[^_]+$/.exec(m[1])?.[1]
+  return ['plugin', plugin ?? m[1]]
+}
+
+export const useKit = (list: readonly SkillUse[], kind: SkillKind, name: string, who: string, at: number): SkillUse[] => {
+  const prev = list.find(u => u.name === name)
+  const next: SkillUse = { name, kind: prev?.kind === 'skill' ? 'skill' : kind, who, at, count: (prev?.count ?? 0) + 1 }
+  return [...list.filter(u => u.name !== name), next].slice(-60)
+}
+
+export type KitRow = { name: string; kind: SkillKind; state: 'active' | 'used' | 'idle'; use?: SkillUse }
+
+// Every skill and plugin to show: used ones newest first, then enabled ones not used yet.
+export const kitRowsOf = (uses: readonly SkillUse[], enabled: readonly string[], at: number): KitRow[] => {
+  const used = [...uses].sort((a, b) => b.at - a.at).map((u): KitRow => ({ name: u.name, kind: u.kind, state: at - u.at < SKILL_LIVE_MS ? 'active' : 'used', use: u }))
+  // A skill named plugin:skill counts as use of that plugin.
+  const seen = new Set(uses.flatMap(u => [u.name, u.name.split(':')[0] ?? u.name]))
+  const idle = enabled.filter(n => !seen.has(n)).sort().map((n): KitRow => ({ name: n, kind: 'plugin', state: 'idle' }))
+  return [...used.filter(r => r.state === 'active'), ...used.filter(r => r.state === 'used'), ...idle]
+}
+
+const whoName = (who: string, list: readonly AgentRun[]): string =>
+  who === 'main' ? 'main' : (list.find(a => a.agentId === who)?.type ?? 'subagent')
+
+const kitRowSvg = (W: number, r: KitRow, list: readonly AgentRun[], at: number): string => {
+  const tint = skillTint(r.name)
+  const isActive = r.state === 'active'
+  const sub =
+    r.state === 'idle'
+      ? 'enabled · not used yet'
+      : `${isActive ? 'active' : `${fmtTime(at - (r.use?.at ?? at))} ago`} · ${whoName(r.use?.who ?? 'main', list)} · ${r.use?.count ?? 0}×`
+  return svg(
+    W,
+    SKILL_ROW_H,
+    `${crab(mx(W, 4, crabWidth(SKILL_SCALE)), 4, 'other', !isActive, isActive, SKILL_SCALE, isRtl(), tint)}
+<text class="${r.state === 'idle' ? 's' : 't'}" ${startText(W, 34, 14)} font-family="${FONT}" font-size="12"${isActive ? ' font-weight="600"' : ''}>${xml(fitText(r.name, 12, W - 60))}</text>
+<text class="m" ${startText(W, 34, 26)} font-family="${FONT}" font-size="10">${r.kind} · ${xml(fitText(sub, 10, W - 100))}</text>
+${isActive ? `<circle class="live" cx="${mx(W, W - 10)}" cy="15" r="3.5" fill="${tint}"/>` : ''}`,
+  )
+}
+
+// The main session as a row beside its subagents: what it is on (the task list's current
+// step) and the last thing it did.
+const MAIN_ROW_H = 46
+const mainRowSvg = (W: number, step: string, item: WorkItem | undefined, isWorking: boolean): string =>
+  svg(
+    W,
+    MAIN_ROW_H,
+    `${rowCrab(W, 4, 8, 'other', false, isWorking)}
+<text class="t" ${startText(W, 44, 19)} font-family="${FONT}" font-size="13" font-weight="600">Main session</text>
+<text class="s" ${startText(W, 44, 35)} font-family="${FONT}" font-size="11">${xml(fitText(step || 'no task list yet', 11, W - 70))}</text>
+${item ? `<text ${endText(W, W - 8, 19)} font-family="${FONT}" font-size="11"><tspan fill="${KIND[item.kind][1]}">${KIND[item.kind][0]}</tspan><tspan class="m"> ${xml(fitText(item.label, 11, W * 0.45))}</tspan></text>` : ''}`,
+  )
+
+// Enabled plugins from settings: { "name@marketplace": true }.
+const enabledPlugins = async ($: EngineInterface): Promise<string[]> => {
+  try {
+    const st = (await $.settings.read()) as { enabledPlugins?: Record<string, unknown> }
+    return Object.entries(st.enabledPlugins ?? {})
+      .filter(([, on]) => on === true)
+      .map(([k]) => k.split('@')[0] ?? k)
+      .filter(n => n !== 'savvy-progress')
+  } catch {
+    return []
+  }
 }
 
 // --- terminal drawing: the same rows in text.
@@ -932,55 +1242,75 @@ async function togglePane($: EngineInterface): Promise<boolean> {
   return true
 }
 
-// The map: every file a Read, Edit or Write touched, who touched it, and the relative imports it holds.
-const IMPORT_RE = /(?:from|import|require)\s*\(?\s*['"](\.{1,2}\/[^'"]+)['"]/g
-const PY_RE = /^\s*from\s+(\.+)([\w.]*)\s+import/gm
-const PHP_RE = /^use\s+App\\([\w\\]+)(?:\s+as\s+\w+)?;/gm
-const dirOf = (p: string): string => p.replace(/\/[^/]*$/, '')
-const joinRel = (dir: string, rel: string): string => {
-  const out = dir.split('/')
-  for (const part of rel.split('/')) {
-    if (part === '..') out.pop()
-    else if (part && part !== '.') out.push(part)
+// What a subagent's tool call worked on, as one line of the map.
+export const workOf = (tool: string, e: Record<string, unknown>): [WorkKind, string] | null => {
+  const str = (k: string): string => (typeof e[k] === 'string' ? (e[k] as string) : '')
+  const tail = (path: string): string => path.replace(/\\/g, '/').split('/').filter(Boolean).slice(-2).join('/')
+  switch (tool) {
+    case 'Read':
+      return ['read', tail(str('file_path'))]
+    case 'Edit':
+    case 'Write':
+      return ['edit', tail(str('file_path'))]
+    case 'Bash':
+      return ['cli', str('description') || str('command')]
+    case 'Grep':
+    case 'Glob':
+      return ['search', str('pattern')]
+    case 'WebFetch':
+      return ['web', /^\w+:\/\/([^/]+)/.exec(str('url'))?.[1] ?? str('url')]
+    case 'WebSearch':
+      return ['web', str('query')]
   }
-  return out.join('/').replace(/\.(tsx?|jsx?|mjs|cjs)$/, '')
+  return null
 }
 
-async function mapFile($: EngineInterface, path: string, mode: FileNode['mode'], who: string): Promise<void> {
-  const p = path.replace(/\\/g, '/')
-  const prev = (await read($, files)).find(f => f.path === p)
-  let imports = prev?.imports
-  if (!imports && /\.(tsx?|jsx?|mjs|cjs|py|php)$/.test(p)) {
-    const text = String(await $.fs.read(p).catch(() => ''))
-    const found = new Set<string>()
-    if (p.endsWith('.py')) {
-      // `from .x import y`, `from ..pkg.x import y`: one dot is this folder, each more goes up one.
-      for (const m of text.matchAll(PY_RE)) {
-        const mod = (m[2] ?? '').replace(/\./g, '/')
-        if (mod) found.add(joinRel(dirOf(p), '../'.repeat(Math.max(0, (m[1] ?? '.').length - 1)) + mod))
-      }
-    } else if (p.endsWith('.php')) {
-      // Laravel's PSR-4 root: `use App\Http\Controllers\Foo;` is app/Http/Controllers/Foo.php.
-      const at = p.indexOf('/app/')
-      if (at >= 0) for (const m of text.matchAll(PHP_RE)) found.add(`${p.slice(0, at)}/app/${(m[1] ?? '').replace(/\\/g, '/')}`)
-    } else {
-      for (const m of text.matchAll(IMPORT_RE)) found.add(joinRel(dirOf(p), m[1] ?? ''))
-    }
-    imports = [...found].slice(0, 12)
-  }
+// The main session's calls are 'main'; a subagent's carry its agentId.
+async function recordWork($: EngineInterface, tool: string, e: { agentId?: string }): Promise<void> {
+  const w = workOf(tool, e as Record<string, unknown>)
+  if (!w || !w[1]) return
   const at = await $.clock.now()
-  await update($, files, list => {
-    const cur = list.find(f => f.path === p)
-    const node: FileNode = {
-      path: p,
-      mode: mode === 'edit' || cur?.mode === 'edit' ? 'edit' : 'read',
-      who: [...new Set([...(cur?.who ?? []), who])],
-      imports: imports ?? [],
-      at,
-    }
-    return [...list.filter(f => f.path !== p), node].slice(-60)
-  })
+  const path = (e as { file_path?: unknown }).file_path
+  const item: WorkItem = {
+    who: e.agentId ?? 'main',
+    kind: w[0],
+    label: w[1].replace(/\s+/g, ' ').slice(0, 100),
+    at,
+    ...(typeof path === 'string' && path ? { path } : {}),
+  }
+  await update($, work, list => [...list, item].slice(-300))
 }
+
+// The app's task list as update_plan changes it: a whole new list, or a step moved on.
+const MAX_PLAN = 12
+const STATUSES: readonly TaskStatus[] = ['pending', 'in_progress', 'completed']
+export const applyPlan = (list: Task[], e: Record<string, unknown>): Task[] => {
+  if (Array.isArray(e.items)) {
+    return e.items
+      .filter((t): t is { content: string; status?: unknown } => typeof t === 'object' && t !== null && typeof (t as { content?: unknown }).content === 'string')
+      .slice(0, MAX_PLAN)
+      .map(t => ({ content: t.content.slice(0, 120), status: STATUSES.includes(t.status as TaskStatus) ? (t.status as TaskStatus) : 'pending' }))
+  }
+  let next = list.slice()
+  const set = (i: number, status: TaskStatus) => {
+    const t = next[i]
+    if (t) next[i] = { ...t, status }
+  }
+  if (e.advance === true) {
+    const cur = next.findIndex(t => t.status === 'in_progress')
+    if (cur >= 0) set(cur, 'completed')
+    const nxt = next.findIndex(t => t.status === 'pending')
+    if (nxt >= 0) set(nxt, 'in_progress')
+  }
+  if (Array.isArray(e.done)) for (const n of e.done) if (typeof n === 'number') set(n - 1, 'completed')
+  if (typeof e.start === 'number') {
+    next = next.map(t => (t.status === 'in_progress' ? { ...t, status: 'completed' } : t))
+    set(e.start - 1, 'in_progress')
+  }
+  return next
+}
+const TASK_GLYPH: Record<TaskStatus, string> = { completed: '✓', in_progress: '◐', pending: '○' }
+const TASK_COLOR: Record<TaskStatus, string | undefined> = { completed: DONE, in_progress: ACCENT, pending: undefined }
 
 async function track($: EngineInterface, id: string, kind: BgTask['kind'], label: string): Promise<void> {
   const at = await $.clock.now()
@@ -1071,24 +1401,67 @@ export const register: Register = (on, options) => {
   // Background shells and monitors are not agents: track them from their tool calls.
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
     const r = await next(e)
+    await recordWork($, 'Bash', e)
     const id = (r as { result?: { backgroundTaskId?: string } }).result?.backgroundTaskId
     if (id) await track($, id, 'shell', String(e.description || e.command || 'shell'))
     return r
   })
   on('tool.call', { tool: 'Read' }, async ($, e, next) => {
     const r = await next(e)
-    if (e.file_path) await mapFile($, e.file_path, 'read', e.agentId ?? 'main')
+    await recordWork($, 'Read', e)
     return r
   })
   on('tool.call', { tool: 'Edit' }, async ($, e, next) => {
     const r = await next(e)
-    if (e.file_path) await mapFile($, e.file_path, 'edit', e.agentId ?? 'main')
+    await recordWork($, 'Edit', e)
     return r
   })
   on('tool.call', { tool: 'Write' }, async ($, e, next) => {
     const r = await next(e)
-    if (e.file_path) await mapFile($, e.file_path, 'edit', e.agentId ?? 'main')
+    await recordWork($, 'Write', e)
     return r
+  })
+  on('tool.call', { tool: 'Grep' }, async ($, e, next) => {
+    const r = await next(e)
+    await recordWork($, 'Grep', e)
+    return r
+  })
+  on('tool.call', { tool: 'Glob' }, async ($, e, next) => {
+    const r = await next(e)
+    await recordWork($, 'Glob', e)
+    return r
+  })
+  on('tool.call', { tool: 'WebFetch' }, async ($, e, next) => {
+    const r = await next(e)
+    await recordWork($, 'WebFetch', e)
+    return r
+  })
+  on('tool.call', { tool: 'WebSearch' }, async ($, e, next) => {
+    const r = await next(e)
+    await recordWork($, 'WebSearch', e)
+    return r
+  })
+  // The app's task list (update_plan), shown in the panel; wrap_up checks it off.
+  on('tool.call', { tool: 'mcp__ccd_turn__update_plan' }, async ($, e, next) => {
+    await update($, tasks, list => applyPlan(list, e as Record<string, unknown>))
+    return next(e)
+  }).catch(($, e, next) => next(e))
+  on('tool.call', { tool: 'mcp__ccd_turn__wrap_up' }, async ($, e, next) => {
+    await update($, tasks, list => list.map(t => ({ ...t, status: 'completed' as const })))
+    return next(e)
+  }).catch(($, e, next) => next(e))
+  on('tool.call', async ($, e, next) => {
+    const k = kitOf(e.tool, e as Record<string, unknown>)
+    if (k) {
+      const at = await $.clock.now()
+      await update($, kit, list => useKit(list, k[0], k[1], e.agentId ?? 'main', at))
+    }
+    return next(e)
+  })
+  on('skill.prompt', async ($, e, next) => {
+    const at = await $.clock.now()
+    await update($, kit, list => useKit(list, 'skill', e.skill, 'main', at))
+    return next(e)
   })
   on('tool.call', { tool: 'Monitor' }, async ($, e, next) => {
     const r = await next(e)
@@ -1284,22 +1657,79 @@ export const register: Register = (on, options) => {
     const list = await read($, agents)
     const bgList = (await read($, bg)).slice().reverse()
     const bgRows = bgList.map(t => (
-      <Text key={`bg-${t.id}`} wrap="truncate-end" color={t.status === 'failed' ? 'red' : t.status === 'done' ? 'green' : undefined}>
-        {STATUS_GLYPH[t.status]} {t.kind} · {t.label}
+      <Text key={`bg-${t.id}`} wrap="truncate-end">
+        <Text color={tintOf(t.id)}>▪</Text>{' '}
+        <Text color={t.status === 'failed' ? 'red' : t.status === 'done' ? 'green' : undefined}>{STATUS_GLYPH[t.status]}</Text> {t.kind} · {t.label}
       </Text>
     ))
-    const fileList = (await read($, files)).slice().sort((a, b) => a.path.localeCompare(b.path))
-    const whoName = (id: string) => (id === 'main' ? 'main' : (list.find(a => a.agentId === id)?.description ?? id.slice(0, 6)))
-    const touched = new Set(fileList.map(n => n.path.replace(/\.(tsx?|jsx?|mjs|cjs|py|php)$/, '')))
-    const tail = (path: string, n: number) => path.split('/').slice(-n).join('/')
-    const mapRows = fileList.map(n => (
-      <Text key={`f-${n.path}`} wrap="truncate-end">
-        <Text color={n.mode === 'edit' ? '#D97757' : undefined} dimColor={n.mode === 'read'}>
-          {n.mode === 'edit' ? '✎' : '·'}
+    const nowAt = await read($, now)
+    const workList = await read($, work)
+    const project = await loadProject($)
+    const crewList = crewOf(list, bgList, workList, nowAt)
+    const placed = placeCrew(project.map, crewList)
+    const shownMap: ProjectMap = project.map ?? { mtimeMs: 0, total: 0, communities: [], links: [] }
+    const mapCards = shownMap.communities.length + (placed.has(OFF_CODE) ? 1 : 0)
+    const touched = workList.filter(w => w.kind === 'edit' && w.path).map(w => w.path ?? '')
+    const mapButton = (
+      <Button
+        key="map-build"
+        label={project.map ? '↻ Rebuild map' : '⌗ Build project map (graphify)'}
+        plain
+        onPress={() => void buildProject($, project.root)}
+      />
+    )
+    const mapNote = project.note || (project.map ? '' : 'No project map yet: graphify maps the code into communities.')
+    const taskList = await read($, tasks)
+    const mainItem = [...workList].reverse().find(w => w.who === 'main')
+    const mainStep = taskList.find(t => t.status === 'in_progress')?.content ?? ''
+    const isMainWorking = !!mainItem && nowAt - mainItem.at < LIVE_MS
+    const showMain = !!mainItem || taskList.length > 0
+    const kitRows = kitRowsOf(await read($, kit), await enabledPlugins($), nowAt)
+    const kitActive = kitRows.filter(k => k.state === 'active').length
+    const kitShown = kitRows.slice(0, SKILL_MAX)
+    const kitMore = kitRows.length - kitShown.length
+    const kitText = kitShown.map(k => (
+      <Text key={`kit-${k.name}`} wrap="truncate-end">
+        <Text color={skillTint(k.name)} dimColor={k.state !== 'active'}>
+          ▣
         </Text>{' '}
-        {tail(n.path, 3)} <Text dimColor>[{n.who.map(whoName).join(', ')}]</Text>
-        {n.imports.length > 0 && <Text dimColor> → {n.imports.map(i => `${tail(i, 1)}${touched.has(i) ? '*' : ''}`).join(', ')}</Text>}
+        <Text bold={k.state === 'active'} dimColor={k.state === 'idle'}>
+          {k.name}
+        </Text>{' '}
+        <Text dimColor>
+          {k.kind} · {k.state === 'idle' ? 'not used yet' : k.state}
+        </Text>
       </Text>
+    ))
+    const tasksDone = taskList.filter(t => t.status === 'completed').length
+    const taskRows = taskList.map((t, i) => (
+      <Text key={`task-${i}`} wrap="truncate-end">
+        <Text color={TASK_COLOR[t.status]} dimColor={t.status === 'pending'}>
+          {TASK_GLYPH[t.status]}
+        </Text>{' '}
+        <Text dimColor={t.status === 'pending'} bold={t.status === 'in_progress'} strikethrough={t.status === 'completed'}>
+          {t.content}
+        </Text>
+      </Text>
+    ))
+    const mapRows = [...shownMap.communities.map(c => ({ id: c.id, name: c.name, sub: `${c.files.length} files` })), ...(placed.has(OFF_CODE) ? [{ id: OFF_CODE, name: 'Terminal & web', sub: '' }] : [])].map(c => (
+      <Box key={`card-${c.id}`} flexDirection="column">
+        <Text wrap="truncate-end">
+          <Text color={placed.has(c.id) ? '#E0B34A' : undefined}>{placed.has(c.id) ? '◆' : '◇'}</Text> {c.name} <Text dimColor>{c.sub}</Text>
+        </Text>
+        {(placed.get(c.id) ?? []).map(m => (
+          <Text key={`crew-${c.id}-${m.key}`} wrap="truncate-end">
+            {'  '}
+            <Text color={m.tint ?? CLAY}>▣</Text> {m.name}
+            {m.item && (
+              <Text dimColor>
+                {' '}
+                {KIND[m.item.kind][0]} {m.item.label}
+              </Text>
+            )}
+          </Text>
+        ))}
+      </Box>
     ))
     const f = await read($, flow)
     const p: Panel = await read($, panel)
@@ -1328,7 +1758,7 @@ export const register: Register = (on, options) => {
         onPress={() => update($, panel, prev => ({ ...prev, isDoneCollapsed: !prev.isDoneCollapsed }))}
       />
     )
-    const isEmpty = list.length === 0 && planned.length === 0 && bgList.length === 0 && fileList.length === 0
+    const isEmpty = list.length === 0 && planned.length === 0 && bgList.length === 0 && taskList.length === 0
     const summary = `≈${fmtCost(t.cost)}, ${fmtTokens(t.tokens)} ${s.tokensWord}, ${fmtTime(t.time)}`
 
     if (e.surface === 'desktop' && 'Svg' in ui) {
@@ -1351,13 +1781,59 @@ export const register: Register = (on, options) => {
         )
       }
       const shownDone = p.isDoneCollapsed ? 0 : finished.length
-      const lines = 1 + (isEmpty ? 1 : 0) + (running.length > 0 ? 1 : 0) + (finished.length > 0 ? 1 : 0) + (planned.length > 0 ? 1 : 0)
-      // Background and Map rows sit in the absolute overlay too, so they must size the grid or they are clipped.
-      const textRows = bgList.length > 0 ? 1 + bgList.length : 0
-      const mapH = fileList.length > 0 ? mapHeight(W, fileList.length) : 0
-      const contentH = headerHeight(title) + (lines + textRows) * LINE_H + (running.length + shownDone) * 66 + planned.length * 46 + mapH
+      // Row 2 is two columns once the pane is wide enough: the crew (main session, subagents,
+      // tasks, background) on the left, skills and plugins on the right.
+      const isTwoCol = W >= 560
+      const colW = isTwoCol ? Math.floor((W - 12) / 2) : W
+      const leftH =
+        (showMain ? MAIN_ROW_H : 0) +
+        ((isEmpty ? 1 : 0) + (running.length > 0 ? 1 : 0) + (finished.length > 0 ? 1 : 0) + (planned.length > 0 ? 1 : 0)) * LINE_H +
+        (running.length + shownDone) * 66 +
+        planned.length * 46 +
+        (taskList.length > 0 ? 1 + taskList.length : 0) * LINE_H +
+        (bgList.length > 0 ? LINE_H + bgList.length * BG_ROW_H : 0)
+      const rightH = LINE_H + (kitShown.length ? kitShown.length * SKILL_ROW_H : LINE_H) + (kitMore > 0 ? LINE_H : 0)
+      const mapH = mapCards > 0 ? mapHeight(W, mapCards) : 0
+      // Every row sits in the absolute overlay, so all of them must size the grid or they are clipped.
+      const contentH =
+        headerHeight(title) + LINE_H + (isTwoCol ? Math.max(leftH, rightH) : leftH + rightH) + LINE_H * (2 + (mapNote ? 1 : 0)) + mapH + 8
       // shortcut: assumes a desktop row is at least GRID_STEP px, so the grid never overshoots the pane; measure if it falls short.
       const gridH = Math.max(contentH, (e.props.scroll?.bodyRows || 0) * GRID_STEP)
+      const left = (
+        <Box key="col-crew" flexDirection="column" width={colW} flexShrink={0} alignItems={align}>
+          {showMain && <Svg key="main" source={mainRowSvg(colW, mainStep, mainItem, isMainWorking)} alt={`Main session: ${mainStep}`} width={colW} height={MAIN_ROW_H} />}
+          {isEmpty && <Text dimColor>{s.empty}</Text>}
+          {running.length > 0 && section('h-run', `${s.running} · ${running.length}`)}
+          {running.map(a => (
+            <Svg key={a.id} source={agentSvg(colW, a, at)} alt={`${a.description}: ${modelName(a.model)}, ${s.isRunning}`} width={colW} height={66} />
+          ))}
+          {finished.length > 0 && toggleDone}
+          {!p.isDoneCollapsed &&
+            finished.map(a => (
+              <Svg key={a.id} source={agentSvg(colW, a, at)} alt={`${a.description}: ${modelName(a.model)}, ${s.isFinished}`} width={colW} height={66} />
+            ))}
+          {planned.length > 0 && section('h-plan', `${s.planned} · ${planned.length}`)}
+          {planned.map(pl => (
+            <Svg key={`plan-${pl.n}`} source={plannedSvg(colW, pl)} alt={`${pl.n}. ${pl.title}: ${s.isPlanned}`} width={colW} height={46} />
+          ))}
+          {taskList.length > 0 && section('h-tasks', `Tasks · ${tasksDone}/${taskList.length}`)}
+          {taskRows}
+          {bgList.length > 0 && section('h-bg', `Background · ${bgList.length}`)}
+          {bgList.map(t => (
+            <Svg key={`bg-${t.id}`} source={bgRowSvg(colW, t, nowAt)} alt={`${t.kind}: ${t.label}, ${t.status}`} width={colW} height={BG_ROW_H} />
+          ))}
+        </Box>
+      )
+      const right = (
+        <Box key="col-kit" flexDirection="column" width={colW} flexShrink={0} alignItems={align}>
+          {section('h-kit', `Skills & plugins · ${kitActive} active of ${kitRows.length}`)}
+          {kitShown.length === 0 && <Text dimColor>No skills or plugins seen yet.</Text>}
+          {kitShown.map(r => (
+            <Svg key={`kit-${r.name}`} source={kitRowSvg(colW, r, list, nowAt)} alt={`${r.kind} ${r.name}: ${r.state}`} width={colW} height={SKILL_ROW_H} />
+          ))}
+          {kitMore > 0 && <Text dimColor>+{kitMore} more not used</Text>}
+        </Box>
+      )
       return (
         <Box flexDirection="column">
           {/* The grid sizes the pane; the content is placed over it, as an
@@ -1366,29 +1842,23 @@ export const register: Register = (on, options) => {
             <Svg key={`grid-${i}`} source={gridSvg(W, tileH)} alt="dotted grid" width={W} height={tileH} />
           ))}
           <Box flexDirection="column" position="absolute" top={0} left={0} right={0} alignItems={align}>
+            {/* Row 1: cost, tokens and time. */}
             <Svg source={headerSvg(W, title, t)} alt={title ? `${title}: ${summary}` : summary} width={W} height={headerHeight(title)} />
             {toggleCompact}
-            {isEmpty && <Text dimColor>{s.empty}</Text>}
-            {running.length > 0 && section('h-run', `${s.running} · ${running.length}`)}
-            {running.map(a => (
-              <Svg key={a.id} source={agentSvg(W, a, at)} alt={`${a.description}: ${modelName(a.model)}, ${s.isRunning}`} width={W} height={66} />
-            ))}
-            {finished.length > 0 && toggleDone}
-            {!p.isDoneCollapsed &&
-              finished.map(a => (
-                <Svg key={a.id} source={agentSvg(W, a, at)} alt={`${a.description}: ${modelName(a.model)}, ${s.isFinished}`} width={W} height={66} />
-              ))}
-            {planned.length > 0 && section('h-plan', `${s.planned} · ${planned.length}`)}
-            {planned.map(pl => (
-              <Svg key={`plan-${pl.n}`} source={plannedSvg(W, pl)} alt={`${pl.n}. ${pl.title}: ${s.isPlanned}`} width={W} height={46} />
-            ))}
-            {bgList.length > 0 && section('h-bg', `Background · ${bgList.length}`)}
-            {bgRows}
-            {fileList.length > 0 && (
+            {/* Row 2: the crew beside the skills and plugins. */}
+            <Box flexDirection={isTwoCol ? (isRtl() ? 'row-reverse' : 'row') : 'column'} gap={isTwoCol ? 1 : 0}>
+              {left}
+              {right}
+            </Box>
+            {/* Row 3: the project map. */}
+            {section('h-map', project.map ? `Map · ${shownMap.total} communities from graphify` : 'Map')}
+            {mapNote && <Text dimColor>{mapNote}</Text>}
+            {mapButton}
+            {mapCards > 0 && (
               <Svg
                 key="map"
-                source={mapSvg(W, fileList, list)}
-                alt={`Quest map: ${fileList.length} files, ${mapXp(fileList).edited} edited, level ${mapXp(fileList).level}`}
+                source={mapSvg(W, shownMap, placed, touched)}
+                alt={`Project map: ${shownMap.communities.length} communities, ${crewList.length} working`}
                 width={W}
                 height={mapH}
               />
@@ -1460,6 +1930,11 @@ export const register: Register = (on, options) => {
           </Text>
         ) : (
           <Box flexDirection="column" marginTop={1}>
+            {showMain && (
+              <Text wrap="truncate-end">
+                <Text color={CLAY}>▣</Text> <Text bold>Main session</Text> <Text dimColor>{mainStep || (mainItem ? `${KIND[mainItem.kind][0]} ${mainItem.label}` : '')}</Text>
+              </Text>
+            )}
             {isEmpty && <Text dimColor>{s.empty}</Text>}
             {running.length > 0 && <Text dimColor>{s.running} · {running.length}</Text>}
             {running.map(row)}
@@ -1481,9 +1956,15 @@ export const register: Register = (on, options) => {
                 </Box>
               )
             })}
+            {taskList.length > 0 && <Text dimColor>Tasks · {tasksDone}/{taskList.length}</Text>}
+            {taskRows}
             {bgList.length > 0 && <Text dimColor>Background · {bgList.length}</Text>}
             {bgRows}
-            {fileList.length > 0 && <Text dimColor>Map · {fileList.length} files (✎ edited, * also touched)</Text>}
+            <Text dimColor>Skills & plugins · {kitActive} active of {kitRows.length}</Text>
+            {kitText}
+            <Text dimColor>{project.map ? `Map · ${shownMap.total} communities from graphify` : 'Map'}</Text>
+            {mapNote && <Text dimColor>{mapNote}</Text>}
+            {mapButton}
             {mapRows}
           </Box>
         )}
@@ -1492,68 +1973,87 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    const f = await read($, flow)
-    if (f === null || e.props.hasSurvey) return next(e)
-    // Draw this row with the other mods' bands beneath it. Claude Code's own placeholder ({ type: 'engine' }) is
+    if (e.props.hasSurvey) return next(e)
+    // Draw the other mods' bands first. Claude Code's own placeholder ({ type: 'engine' }) is
     // never nested: the desktop drops a band that nests it.
     const drawn = await Promise.resolve(next(e)).catch(() => null)
     const below = drawn && typeof drawn === 'object' && (drawn as { type?: string }).type !== 'engine' ? drawn : null
+    const beneath = new Set(next.trace.filter(t => t.outcome !== 'skipped').map(t => t.plugin))
+    const f = await read($, flow)
+    const ws = beneath.has('ribbon') ? await read($, windows) : []
+    if (f === null && ws.length === 0) return drawn ?? next(e)
+    // This band stands in for ribbon's and ponytail's rows; any other band is kept.
+    const isOurs = [...beneath].every(p => p === 'ribbon' || p === 'ponytail')
+    const rest = isOurs ? null : below
 
     const ui = $.ui.resolve(e)
     const { Box, Text, Button } = ui
     const list = await read($, agents)
-    const crew = list.length + plannedOf(f, list).length
+    const crew = list.length + (f ? plannedOf(f, list).length : 0)
     const isWorking = list.some(a => a.status === 'running')
-    const crewButton = (
-      <Button key="savvy-agents" label={`×${crew}`} plain onPress={() => void togglePane($)} />
-    )
-    const percent = `${Math.round(ratio(f) * 100)}%`
-    const dismiss = (
-      <Button
-        key="savvy-dismiss"
-        label="✕"
-        plain
-        role="dismiss"
-        onPress={() => update($, flow, () => null)}
-      />
-    )
+    // The clock is read only for the usage resets: a band without them needs no clock.
+    const at = ws.length ? await $.clock.now() : 0
+    const crewButton = <Button key="savvy-agents" label={`×${crew}`} plain onPress={() => void togglePane($)} />
+    const dismiss = f && <Button key="savvy-dismiss" label="✕" plain role="dismiss" onPress={() => update($, flow, () => null)} />
+    const percent = f ? `${Math.round(ratio(f) * 100)}%` : ''
+    const usageAlt = ws.map(w => `${windowName(w.kind)} ${Math.max(0, Math.round(100 - w.percentUsed))}% left`).join(', ')
 
     // The terminal's element table is completed with an `Svg` that draws nothing: test the surface too.
     if (e.surface !== 'terminal' && 'Svg' in ui) {
       const { Svg } = ui
-      // About 8 CSS px per reported column; the rest is the count, the dismiss
-      // and their gaps. No floor above the slot: a row wider than it would wrap.
-      const width = Math.max(180, Math.min(1600, (e.props.bodyColumns || 100) * 8 - 96))
+      // About 8 CSS px per reported column; the rest is the count, the dismiss and their gaps.
+      const width = Math.max(220, Math.min(1600, (e.props.bodyColumns || 100) * 8 - 96))
+      const inner = width - 16
+      const rows = [...(f ? [rowSvg(f, inner, isWorking)] : []), ...(ws.length ? [usageSvg(ws, inner, at)] : [])]
+      const alt = [f ? `${f.title}: ${label(f)}, ${percent}` : '', usageAlt].filter(Boolean).join('; ')
       return (
         <Box flexDirection="column">
           <Box flexDirection={isRtl() ? 'row-reverse' : 'row'} alignItems="center" gap={1}>
-            <Svg source={rowSvg(f, width, isWorking)} alt={`${f.title}: ${label(f)}, ${percent}`} width={width} height={H} />
+            <Svg source={bandSvg(width, rows)} alt={alt} width={width} height={bandHeight(rows.length)} />
             {crewButton}
             {dismiss}
           </Box>
-          {below}
+          {rest}
         </Box>
       )
     }
 
     const cols = e.props.bodyColumns
-    const titleW = Math.max(8, Math.min(30, f.title.length + 2, Math.floor(cols / 3)))
+    const titleW = Math.max(8, Math.min(30, (f?.title.length ?? 5) + 2, Math.floor(cols / 3)))
     const width = Math.max(6, Math.min(40, cols - titleW - 32))
+    const usageW = Math.max(4, Math.floor((cols - 8) / Math.max(1, ws.length)) - 16)
     return (
       <Box flexDirection="column">
-        <Box flexDirection="row" gap={2}>
-          <Box width={titleW} flexShrink={0}>
-            <Text color={f.isFinished ? DONE : ACCENT}>● </Text>
-            <Text wrap="truncate-end">{f.title}</Text>
+        {f && (
+          <Box flexDirection="row" gap={2}>
+            <Box width={titleW} flexShrink={0}>
+              <Text color={f.isFinished ? DONE : ACCENT}>● </Text>
+              <Text wrap="truncate-end">{f.title}</Text>
+            </Box>
+            <Text color={f.isFinished ? DONE : ACCENT}>{barText(f, width)}</Text>
+            <Text bold>{label(f)}</Text>
+            <Text dimColor>{percent}</Text>
+            {crewButton}
+            {dismiss}
           </Box>
-          <Text color={f.isFinished ? DONE : ACCENT}>{barText(f, width)}</Text>
-          <Text bold>{label(f)}</Text>
-          <Text dimColor>{percent}</Text>
-          <Text color={CLAY}>▣</Text>
-          {crewButton}
-          {dismiss}
-        </Box>
-        {below}
+        )}
+        {ws.length > 0 && (
+          <Box flexDirection="row" gap={2}>
+            {ws.map(w => {
+              const left = Math.max(0, Math.min(100, Math.round(100 - w.percentUsed)))
+              const color = left < 20 ? LOW : (USAGE_COLOR[w.kind] ?? ACCENT)
+              return (
+                <Text key={`w-${w.kind}`}>
+                  <Text dimColor>{windowName(w.kind)} </Text>
+                  <Text color={color}>{blocks(left / 100, usageW)}</Text>
+                  <Text bold> {left}%</Text>
+                  <Text dimColor> {resetIn(w.resetsAt, at)}</Text>
+                </Text>
+              )
+            })}
+          </Box>
+        )}
+        {rest}
       </Box>
     )
   })

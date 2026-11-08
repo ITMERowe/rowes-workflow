@@ -1,32 +1,35 @@
 # Rowe's Workflow
 
-Rowe's whole Claude Code workflow in one repository: two mods (plugins) and three routing agents.
+Rowe's whole Claude Code workflow in one repository: one mod (plugin), three routing agents, and graphify for the project map.
 
 | Part | What it does |
 | --- | --- |
-| `plugins/cockpit` | One dark band above the prompt that merges four rows into one look. |
-| `plugins/savvy-progress` | The agents panel (`/agents-info`), its quest map, the progress band data, and model routing for background agents. |
+| `plugins/savvy-progress` | The band above the prompt, the agents panel (`/agents-info`) with its project map, and model routing for background agents. |
 | `agents/` | `searcher`, `editor` and `reviewer` subagents, each pinned to a model tier. |
-| `CLAUDE.md.snippet` | The "Routing" and "Progress" rules that tell Claude when to use each agent and tool. |
+| `CLAUDE.md.snippet` | The "Routing" and "Progress" rules that tell Claude when to use each agent, tool and graphify. |
 | `install.ps1` | Copies `agents/*.md` to `~/.claude/agents` and prints the snippet for you to paste. |
 
-## cockpit: the band rows
+## The band above the prompt
+
+One card in the panel's look, each bar the savvy pixel bar filling its row:
 
 | Row | Source | Shows |
 | --- | --- | --- |
-| FLOW | savvy-progress | The flow title, phase, accepted tasks out of planned, and a `×N agents` button that opens `/agents-info`. |
-| TASKS | the app's task list (`update_plan` / `wrap_up`) | One summary line; Show/Hide lists each step with ✓ done, ◐ in progress, ○ pending. |
-| SESSION | ponytail | Session cost, plus Review and Audit buttons. |
-| USAGE | ribbon | Plan usage (7-day and 5-hour left) and cache WARM/COLD with the next message's cost. |
+| FLOW | savvy-progress | The flow title, tasks accepted out of planned, the percent, and a `×N` button that opens `/agents-info`. |
+| USAGE | ribbon | Plan usage left for the 7-day and 5-hour windows, side by side, each with its reset time. Red under 20% left. |
 
-cockpit draws these rows in place of the ribbon and ponytail bands, so each row appears once. A row whose plugin is not installed is left out.
+The band stands in for ribbon's and ponytail's own rows, so nothing shows twice.
 
-## savvy-progress: the agents panel
+## The agents panel
 
-- `/agents-info` toggles the panel; `/agents-info open` opens it without toggling. It lists running, finished and planned subagents with model, effort, task progress, context, estimated cost and time.
-- The Map tab is a quest map: each file touched is an island, imports are roads between islands, working crabs walk, and the map has a level (LV) and XP.
-- Tools: `mcp__savvy-progress__progress` (the main session reports a flow) and `mcp__savvy-progress__step` (a worker reports its steps).
-- `routeModel`: a background subagent with no pinned model runs on Sonnet (Haiku for `Explore`). Agents in its `PINNED` set (`searcher`, `editor`, `reviewer`) and `savvy-*` workers keep their own model.
+`/agents-info` toggles the panel; `/agents-info open` opens it without toggling.
+
+1. **Row 1:** cost, tokens and time for the session's subagents.
+2. **Row 2, left:** the main session (its current task-list step and last action), running, finished and planned subagents, the task list, and background tasks (small crabs, one colour each).
+3. **Row 2, right:** skills and plugins. Active ones (used in the last 5 minutes) first, then ones used earlier, then enabled plugins not used yet. Each has its own crab colour, apart from subagents and background tasks.
+4. **Row 3, the Map:** graphify's map of the project. Each card is a community of code (its files and symbols, a bar of files edited this session), linked where the code calls across. A crab sits on the card each agent, subagent and background task is working in; commands, web and searches sit on "Terminal & web". The **Build project map** / **Rebuild map** button runs `graphify update .`.
+
+On a narrow pane row 2 stacks into one column. Tools: `mcp__savvy-progress__progress` (the main session reports a flow) and `mcp__savvy-progress__step` (a worker reports its steps). `routeModel`: a background subagent with no pinned model runs on Sonnet (Haiku for `Explore`); agents in its `PINNED` set (`searcher`, `editor`, `reviewer`) and `savvy-*` workers keep their own model.
 
 ## Routing
 
@@ -57,31 +60,24 @@ Each subagent in the panel is a crab dressed for its task and model:
 ## Requirements
 
 - Claude Code with mods (plugins with a hooks module).
-- The `ponytail` plugin (marketplace `DietrichGebert/ponytail`) for the SESSION row.
+- The `ponytail` plugin (marketplace `DietrichGebert/ponytail`).
 - The `ribbon` plugin (marketplace `robonuggets/ribbon`) for the USAGE row.
+- graphify for the Map: `pip install graphifyy`, then `graphify update .` in the project root (or the panel's Build button). It writes `graphify-out/`, which this repo ignores.
 
 ## Install
 
 Make sure no other copy of savvy-progress is loaded (for example `savvy-progress@claude-kit`, or a folder named in `CLAUDE_CODE_PLUGIN_DIRS`). Two copies draw two panels and report twice.
 
-1. At the prompt of a terminal session, install the two plugins. Answer `y` to add the marketplace, then pick a scope.
+1. At the prompt of a terminal session, install the plugin. Answer `y` to add the marketplace, then pick a scope.
 
    ```
    /plugin install savvy-progress --marketplace <owner>/rowes-workflow
-   ```
-
-   ```
-   /plugin install cockpit --marketplace <owner>/rowes-workflow
    ```
 
    From a shell instead:
 
    ```bash
    claude plugin install savvy-progress --marketplace <owner>/rowes-workflow
-   ```
-
-   ```bash
-   claude plugin install cockpit --marketplace <owner>/rowes-workflow
    ```
 
 2. Clone this repository and run the installer from its folder:

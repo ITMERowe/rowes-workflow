@@ -46,14 +46,47 @@ export type Panel = {
   autoOpenedFor: string
 }
 
-export type FileNode = {
-  path: string
-  mode: 'read' | 'edit'
-  /** `main`, or the agentId of the agent that touched it. */
-  who: string[]
-  /** Relative imports found in the file, resolved to extensionless paths. */
-  imports: string[]
+export type TaskStatus = 'pending' | 'in_progress' | 'completed'
+
+/** One step of the app's task list (update_plan). */
+export type Task = { content: string; status: TaskStatus }
+
+export type WorkKind = 'read' | 'edit' | 'cli' | 'search' | 'web'
+
+/** One tool call: what the main session or a subagent read, edited, ran or looked up. */
+export type WorkItem = {
+  /** 'main', or the agentId of the subagent that made the call. */
+  who: string
+  kind: WorkKind
+  label: string
   at: number
+  /** The file it read or edited, as the tool was given it. */
+  path?: string
+}
+
+/** One community of code as graphify grouped it (graphify-out/graph.json). */
+export type Community = { id: number; name: string; files: string[]; symbols: number }
+
+/** The project map the panel draws: the largest communities and the links between them. */
+export type ProjectMap = {
+  mtimeMs: number
+  /** How many communities the graph has, shown or not. */
+  total: number
+  communities: Community[]
+  /** [community, community, how many calls and references cross between them] */
+  links: [number, number, number][]
+}
+
+export type SkillKind = 'skill' | 'plugin'
+
+/** A skill or plugin the session used: its last use, by whom, and how often. */
+export type SkillUse = {
+  name: string
+  kind: SkillKind
+  /** 'main', or the agentId of the subagent that used it. */
+  who: string
+  at: number
+  count: number
 }
 
 export type BgTask = {
@@ -71,7 +104,9 @@ declare module 'claude-code' {
       flow: Flow | null
       agents: AgentRun[]
       bg: BgTask[]
-      files: FileNode[]
+      work: WorkItem[]
+      tasks: Task[]
+      kit: SkillUse[]
       panel: Panel
       now: number
     }
