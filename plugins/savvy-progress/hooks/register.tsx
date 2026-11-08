@@ -1728,7 +1728,10 @@ export const register: Register = (on, options) => {
     const mapNote = project.note || (project.map ? '' : 'No project map yet: graphify maps the code into communities.')
     const taskList = await read($, tasks)
     const mainItem = [...workList].reverse().find(w => w.who === 'main')
-    const mainStep = taskList.find(t => t.status === 'in_progress')?.content ?? ''
+    const doneCount = taskList.filter(t => t.status === 'completed').length
+    const mainStep =
+      taskList.find(t => t.status === 'in_progress')?.content ??
+      (taskList.length ? (doneCount === taskList.length ? `all ${taskList.length} tasks done` : `${doneCount}/${taskList.length} tasks done`) : '')
     const isMainWorking = !!mainItem && mainItem.at > idleAt && nowAt - mainItem.at < LIVE_MS
     const showMain = !!mainItem || taskList.length > 0
     const kitRows = kitRowsOf(await read($, kit), await enabledPlugins($), nowAt)
@@ -1831,7 +1834,7 @@ export const register: Register = (on, options) => {
       // Row 2 is two columns once the pane is wide enough: the crew (main session, subagents,
       // tasks, background) on the left, skills and plugins on the right.
       const isTwoCol = W >= 560
-      const colW = isTwoCol ? Math.floor((W - 12) / 2) : W
+      const colW = isTwoCol ? Math.floor(W / 2) - 8 : W
       const leftH =
         (showMain ? MAIN_ROW_H : 0) +
         ((isEmpty ? 1 : 0) + (running.length > 0 ? 1 : 0) + (finished.length > 0 ? 1 : 0) + (planned.length > 0 ? 1 : 0)) * LINE_H +
@@ -1847,7 +1850,7 @@ export const register: Register = (on, options) => {
       // shortcut: assumes a desktop row is at least GRID_STEP px, so the grid never overshoots the pane; measure if it falls short.
       const gridH = Math.max(contentH, (e.props.scroll?.bodyRows || 0) * GRID_STEP)
       const left = (
-        <Box key="col-crew" flexDirection="column" width={colW} flexShrink={0} alignItems={align}>
+        <Box key="col-crew" flexDirection="column" width={isTwoCol ? '50%' : undefined} flexShrink={0} alignItems={align}>
           {showMain && <Svg key="main" source={mainRowSvg(colW, mainStep, mainItem, isMainWorking)} alt={`Main session: ${mainStep}`} width={colW} height={MAIN_ROW_H} />}
           {isEmpty && <Text dimColor>{s.empty}</Text>}
           {running.length > 0 && section('h-run', `${s.running} · ${running.length}`)}
@@ -1872,7 +1875,7 @@ export const register: Register = (on, options) => {
         </Box>
       )
       const right = (
-        <Box key="col-kit" flexDirection="column" width={colW} flexShrink={0} alignItems={align}>
+        <Box key="col-kit" flexDirection="column" width={isTwoCol ? '50%' : undefined} flexShrink={0} alignItems={align}>
           {section('h-kit', `Skills & plugins · ${kitActive} active of ${kitRows.length}`)}
           {kitShown.length === 0 && <Text dimColor>No skills or plugins seen yet.</Text>}
           {kitShown.map(r => (
@@ -1893,7 +1896,7 @@ export const register: Register = (on, options) => {
             <Svg source={headerSvg(W, title, t)} alt={title ? `${title}: ${summary}` : summary} width={W} height={headerHeight(title)} />
             {toggleCompact}
             {/* Row 2: the crew beside the skills and plugins. */}
-            <Box flexDirection={isTwoCol ? (isRtl() ? 'row-reverse' : 'row') : 'column'} gap={isTwoCol ? 1 : 0}>
+            <Box flexDirection={isTwoCol ? (isRtl() ? 'row-reverse' : 'row') : 'column'}>
               {left}
               {right}
             </Box>
