@@ -593,6 +593,10 @@ const gridSvg = (W: number, H: number) => `<svg xmlns="http://www.w3.org/2000/sv
 <rect width="${W}" height="${H}" fill="url(#g)"/>
 </svg>`
 
+const RULE_H = 14
+const ruleSvg = (W: number): string =>
+  `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${RULE_H}" viewBox="0 0 ${W} ${RULE_H}"><style>.ln{stroke:#e4e4e1}@media (prefers-color-scheme: dark){.ln{stroke:#333331}}</style><line class="ln" x1="0" y1="${RULE_H / 2}" x2="${W}" y2="${RULE_H / 2}" stroke-width="1"/></svg>`
+
 const PANE_CSS = `<style>
 .t{fill:#1f1f1f}.s{fill:#6b6b68}.m{fill:#9a9a96}.k{fill:#ecebe8}.ln{stroke:#e4e4e1}.tile{fill:#f4f3f0}
 @media (prefers-color-scheme: dark){.t{fill:#ececec}.s{fill:#a8a8a4}.m{fill:#7d7d79}.k{fill:#2c2c2b}.ln{stroke:#333331}.tile{fill:#262625}}
@@ -788,13 +792,14 @@ const svg = (W: number, H: number, body: string): string =>
 // The pane's own title already says "Agents": the header names the flow, if any.
 const headerSvg = (W: number, title: string, t: ReturnType<typeof totals>): string => {
   const s = tr()
-  const gap = 6
+  const gap = 8
   const tw = (W - gap * 2) / 3
   const top = title ? 28 : 0
+  const isZero = (v: string) => /^≈?\$?0(\.00)?$|^0:00$/.test(v)
   const tile = (i: number, k: string, v: string) =>
-    `<rect class="tile" x="${mx(W, i * (tw + gap), tw)}" y="${top}" width="${tw}" height="40" rx="8"/>
-<text class="s" ${startText(W, i * (tw + gap) + 9, top + 16)} font-family="${FONT}" font-size="11">${k}</text>
-<text class="t" ${startText(W, i * (tw + gap) + 9, top + 33, false)} font-family="${FONT}" font-size="15" font-weight="600" font-variant-numeric="tabular-nums">${v}</text>`
+    `<rect class="tile ln" x="${mx(W, i * (tw + gap), tw)}" y="${top + 0.5}" width="${tw}" height="46" rx="10" stroke-width="1"/>
+<text class="s" ${startText(W, i * (tw + gap) + 12, top + 17)} font-family="${FONT}" font-size="10" letter-spacing=".4">${k.toUpperCase()}</text>
+<text class="${isZero(v) ? 'm' : 't'}" ${startText(W, i * (tw + gap) + 12, top + 38, false)} font-family="${FONT}" font-size="18" font-weight="600" font-variant-numeric="tabular-nums">${v}</text>`
   return svg(
     W,
     headerHeight(title),
@@ -803,7 +808,7 @@ ${tile(0, s.cost, '≈' + fmtCost(t.cost))}${tile(1, s.tokens, fmtTokens(t.token
   )
 }
 
-const headerHeight = (title: string): number => (title ? 72 : 44)
+const headerHeight = (title: string): number => (title ? 82 : 54)
 
 // The task's own progress when the worker reports steps; a finished run is full.
 const progressOf = (a: AgentRun): number | null => {
@@ -890,6 +895,7 @@ const compactSvg = (W: number, list: AgentRun[], planned: Planned[], t: ReturnTy
 // web, searches, background tasks) sits on its own card.
 export const GRAPH = 'graphify-out/graph.json'
 const MAP_MAX = 24
+const LIVE = '#E0B34A'
 const LIVE_MS = 90_000
 // Three zoom levels: 0 chips (name only, up to 24), 1 cards with counts (default, up to
 // 16), 2 cards with the latest action and a touched-files bar (up to 12).
@@ -905,7 +911,7 @@ const MAP_PAD = 4
 const mapCols = (W: number, z: Zoom): number => Math.max(1, Math.floor((W - MAP_PAD * 2 + CARD_GAP) / (ZOOMS[z].w + CARD_GAP)))
 export const mapCardCount = (p: ProjectMap, hasOff: boolean, z: Zoom): number => Math.min(p.communities.length, ZOOMS[z].max) + (hasOff ? 1 : 0)
 export const mapHeight = (W: number, n: number, z: Zoom): number =>
-  MAP_PAD * 2 + Math.ceil(n / mapCols(W, z)) * (ZOOMS[z].h + CARD_GAP) - CARD_GAP + 20
+  MAP_PAD * 2 + Math.ceil(n / mapCols(W, z)) * (ZOOMS[z].h + CARD_GAP) - CARD_GAP + 26
 
 const KIND: Record<WorkKind, [glyph: string, color: string, word: string]> = {
   read: ['◇', '#6AAABD', 'read'],
@@ -975,6 +981,10 @@ export const projectOf = (raw: string, mtimeMs: number): ProjectMap => {
     communities: order.map(id => {
       const c = info.get(id)!
       return { id, name: shortName(c.name), files: [...c.files].slice(0, 400), symbols: c.symbols }
+    }).map((c, _i, all) => {
+      if (all.filter(o => o.name === c.name).length < 2) return c
+      const base = (c.files[0] ?? '').split('/').pop()?.replace(/\.[^.]+$/, '') ?? ''
+      return base && base !== c.name.split('/').pop() ? { ...c, name: `${c.name} · ${base}` } : { ...c, name: `${c.name} #${c.id}` }
     }),
     links: links.sort((a, b) => b[2] - a[2]).slice(0, 24),
   }
@@ -1026,9 +1036,9 @@ export const placeCrew = (p: ProjectMap | null, crew: readonly Crew[]): Map<numb
 }
 
 const MAP_CSS = `<style>
-.card{fill:#f4f3f0;stroke:#e4e4e1}.card.on{fill:#fdf5e9;stroke:#e0b34a}.wire{stroke:#c9c8c3}
-@media (prefers-color-scheme: dark){.card{fill:#232322;stroke:#333331}.card.on{fill:#2f271c;stroke:#e0b34a}.wire{stroke:#46453f}}
-.wire{stroke-dasharray:3 4}
+.card{fill:#f4f3f0;stroke:#e9e8e5}.card.hot{fill:#f9f3e6;stroke:#e8d9b0}.card.on{fill:#fdf5e9;stroke:#e0b34a}.wire{stroke:#a8a7a0}.wdot{fill:#a8a7a0}
+@media (prefers-color-scheme: dark){.card{fill:#232322;stroke:#2b2b29}.card.hot{fill:#262420;stroke:#6b5a2e}.card.on{fill:#2f271c;stroke:#e0b34a}.wire{stroke:#6a6a62}.wdot{fill:#6a6a62}}
+.wire{stroke-dasharray:4 3}
 </style>`
 
 const crewCrab = (m: Crew, x: number, y: number, scale: number): string =>
@@ -1047,7 +1057,7 @@ export const mapSvg = (W: number, p: ProjectMap, placed: Map<number, Crew[]>, to
   const index = new Map(cards.map((k, i) => [k.id, i]))
   const H = mapHeight(W, cards.length, z)
 
-  const wires = p.links.flatMap(([a, b, w]) => {
+  const wires = p.links.slice(0, 14).flatMap(([a, b, w]) => {
     const i = index.get(a)
     const j = index.get(b)
     if (i === undefined || j === undefined) return []
@@ -1058,7 +1068,9 @@ export const mapSvg = (W: number, p: ProjectMap, placed: Map<number, Crew[]>, to
       ? [s.x + (s.x < t.x ? cw : 0), s.y + ch / 2, t.x + (s.x < t.x ? 0 : cw), t.y + ch / 2]
       : [s.x + cw / 2, s.y + (s.y < t.y ? ch : 0), t.x + cw / 2, t.y + (s.y < t.y ? 0 : ch)]
     const bend = sameRow ? `C${(x1 + x2) / 2} ${y1} ${(x1 + x2) / 2} ${y2}` : `C${x1} ${(y1 + y2) / 2} ${x2} ${(y1 + y2) / 2}`
-    return [`<path class="wire" d="M${x1} ${y1} ${bend} ${x2} ${y2}" fill="none" stroke-width="${Math.min(2.5, 0.8 + Math.log2(w) / 2)}"/>`]
+    return [
+      `<path class="wire" d="M${x1} ${y1} ${bend} ${x2} ${y2}" fill="none" stroke-width="${1 + Math.min(2, Math.log2(w) / 2)}"/><circle class="wdot" cx="${x1}" cy="${y1}" r="2.5"/><circle class="wdot" cx="${x2}" cy="${y2}" r="2.5"/>`,
+    ]
   })
 
   const crabScale = z === 0 ? 0.42 : z === 1 ? 0.5 : 0.62
@@ -1073,14 +1085,17 @@ export const mapSvg = (W: number, p: ProjectMap, placed: Map<number, Crew[]>, to
     const name = k.c ? k.c.name : 'Terminal & web'
     const files = k.c?.files ?? []
     const hit = files.filter(f => touched.some(t => inFile(t, f))).length
-    const sub = k.c ? `${files.length} file${files.length === 1 ? '' : 's'} · ${k.c.symbols} sym` : `${off.length} running`
-    const nameSize = z === 0 ? 10.5 : 11.5
+    const fileWord = `${files.length} file${files.length === 1 ? '' : 's'}`
+    const sub = k.c ? (z === 2 ? `${fileWord} · ${k.c.symbols} symbols` : fileWord) : `${off.length} running`
+    const isHot = !isLive && hit > 0
+    const nameSize = z === 0 ? 11 : 12
     const nameY = z === 0 ? ch / 2 + 4 : 16
     const parts = [
-      `<rect class="card${isLive ? ' on' : ''}" x="${x}" y="${y}" width="${cw}" height="${ch}" rx="${z === 0 ? 6 : 8}" stroke-width="1"/>`,
-      `<text class="t" x="${x + 8}" y="${y + nameY}" font-family="${FONT}" font-size="${nameSize}" font-weight="600">${xml(fitText(name, nameSize, textW))}</text>`,
+      `<rect class="card${isLive ? ' on' : isHot ? ' hot' : ''}" x="${x}" y="${y}" width="${cw}" height="${ch}" rx="${z === 0 ? 6 : 8}" stroke-width="1"/>`,
+      isLive || isHot ? `<rect x="${x + 1}" y="${y + 5}" width="3" height="${ch - 10}" rx="1.5" fill="${isLive ? LIVE : '#8a7a4a'}"/>` : '',
+      `<text class="${isLive || isHot ? 't' : 's'}" x="${x + 10}" y="${y + nameY}" font-family="${FONT}" font-size="${nameSize}" font-weight="${isLive ? 700 : 600}">${xml(fitText(name, nameSize, textW))}</text>`,
     ]
-    if (z >= 1) parts.push(`<text class="s" x="${x + 8}" y="${y + 30}" font-family="${FONT}" font-size="9.5">${xml(fitText(sub, 9.5, textW))}</text>`)
+    if (z >= 1) parts.push(`<text class="m" x="${x + 10}" y="${y + 30}" font-family="${FONT}" font-size="10">${xml(fitText(sub, 9.5, textW))}</text>`)
     if (z === 2) {
       if (latest?.item)
         parts.push(
@@ -1101,14 +1116,15 @@ export const mapSvg = (W: number, p: ProjectMap, placed: Map<number, Crew[]>, to
     return parts.join('')
   })
   const hidden = p.total - shown.length
-  const legend = (Object.keys(KIND) as WorkKind[]).map(k => `<tspan fill="${KIND[k][1]}">${KIND[k][0]}</tspan> ${KIND[k][2]}`).join('   ')
+  const legend = (Object.keys(KIND) as WorkKind[]).map(k => `<tspan fill="${KIND[k][1]}">${KIND[k][0]}</tspan> ${KIND[k][2]}`).join('    ')
   return svg(
     W,
     H,
     `${MAP_CSS}${BAR_CSS(false)}
 ${wires.join('')}
 ${body.join('')}
-<text class="s" x="${MAP_PAD}" y="${H - 5}" font-family="${FONT}" font-size="9.5">${legend}${hidden > 0 ? `   · ${hidden} more (zoom out)` : ''}</text>`,
+<text class="s" x="${MAP_PAD}" y="${H - 6}" font-family="${FONT}" font-size="11">${legend}</text>
+${hidden > 0 ? `<text class="m" x="${W - MAP_PAD}" y="${H - 6}" text-anchor="end" font-family="${FONT}" font-size="11">${hidden} more · zoom out</text>` : ''}`,
   )
 }
 
@@ -1218,28 +1234,51 @@ const kitRowSvg = (W: number, r: KitRow, list: readonly AgentRun[], at: number):
   const sub =
     r.state === 'idle'
       ? 'enabled · not used yet'
-      : `${isActive ? 'active' : `${fmtTime(at - (r.use?.at ?? at))} ago`} · ${whoName(r.use?.who ?? 'main', list)} · ${r.use?.count ?? 0}×`
+      : `${isActive ? 'now' : `${fmtTime(at - (r.use?.at ?? at))} ago`} · ${whoName(r.use?.who ?? 'main', list)} · ${r.use?.count ?? 0}×`
   return svg(
     W,
     SKILL_ROW_H,
     `${crab(mx(W, 4, crabWidth(SKILL_SCALE)), 4, 'other', !isActive, isActive, SKILL_SCALE, isRtl(), tint)}
 <text class="${r.state === 'idle' ? 's' : 't'}" ${startText(W, 34, 14)} font-family="${FONT}" font-size="12"${isActive ? ' font-weight="600"' : ''}>${xml(fitText(r.name, 12, W - 60))}</text>
-<text class="m" ${startText(W, 34, 26)} font-family="${FONT}" font-size="10">${r.kind} · ${xml(fitText(sub, 10, W - 100))}</text>
-${isActive ? `<circle class="live" cx="${mx(W, W - 10)}" cy="15" r="3.5" fill="${tint}"/>` : ''}`,
+<text class="m" ${startText(W, 34, 26)} font-family="${FONT}" font-size="10">${xml(fitText(sub, 10, W - 100))}</text>
+<text class="m" ${endText(W, W - (isActive ? 22 : 8), 14)} font-family="${FONT}" font-size="10">${r.kind}</text>
+${isActive ? `<circle class="live" cx="${mx(W, W - 10)}" cy="11" r="3.5" fill="${tint}"/>` : ''}`,
+  )
+}
+
+// Enabled plugins not used yet: a grid of small chips, two to a row.
+const CHIP_H = 24
+export const kitIdleHeight = (n: number): number => (n ? Math.ceil(n / 2) * CHIP_H + 4 : 0)
+const kitIdleSvg = (W: number, rows: readonly KitRow[]): string => {
+  const cw = (W - 6) / 2
+  return svg(
+    W,
+    kitIdleHeight(rows.length),
+    rows
+      .map((r, i) => {
+        const x = (i % 2) * (cw + 6)
+        const y = Math.floor(i / 2) * CHIP_H + 2
+        return `<rect class="tile ln" x="${mx(W, x, cw)}" y="${y + 0.5}" width="${cw}" height="${CHIP_H - 4}" rx="10" stroke-width="1"/>
+${crab(mx(W, x + 5, crabWidth(0.45)), y + 3, 'other', true, false, 0.45, isRtl(), skillTint(r.name))}
+<text class="s" ${startText(W, x + 24, y + 14)} font-family="${FONT}" font-size="11">${xml(fitText(r.name, 11, cw - 30))}</text>`
+      })
+      .join(''),
   )
 }
 
 // The main session as a row beside its subagents: what it is on (the task list's current
 // step) and the last thing it did.
-const MAIN_ROW_H = 46
+const MAIN_ROW_H = 54
 const mainRowSvg = (W: number, step: string, item: WorkItem | undefined, isWorking: boolean): string =>
   svg(
     W,
     MAIN_ROW_H,
-    `${rowCrab(W, 4, 8, 'king', false, isWorking)}
-<text class="t" ${startText(W, 44, 19)} font-family="${FONT}" font-size="13" font-weight="600">Main session</text>
-<text class="s" ${startText(W, 44, 35)} font-family="${FONT}" font-size="11">${xml(fitText(step || 'no task list yet', 11, W - 70))}</text>
-${item ? `<text ${endText(W, W - 8, 19)} font-family="${FONT}" font-size="11"><tspan fill="${KIND[item.kind][1]}">${KIND[item.kind][0]}</tspan><tspan class="m"> ${xml(fitText(item.label, 11, W * 0.45))}</tspan></text>` : ''}`,
+    `<rect class="tile ln" x="0.5" y="0.5" width="${W - 1}" height="${MAIN_ROW_H - 3}" rx="10" stroke-width="1"/>
+${rowCrab(W, 6, 10, 'king', false, isWorking)}
+<text class="t" ${startText(W, 46, 18)} font-family="${FONT}" font-size="13" font-weight="600">Main session</text>
+<text class="s" ${startText(W, 46, 33)} font-family="${FONT}" font-size="11">${xml(fitText(step || 'no task list yet', 11, W - 70))}</text>
+${item ? `<text ${startText(W, 46, 46)} font-family="${FONT}" font-size="10"><tspan fill="${KIND[item.kind][1]}">${KIND[item.kind][0]}</tspan><tspan class="m"> ${xml(fitText(item.label, 10, W - 80))}</tspan></text>` : ''}
+${isWorking ? `<circle class="live" cx="${mx(W, W - 12)}" cy="14" r="3.5" fill="${LIVE}"/>` : ''}`,
   )
 
 // Enabled plugins from settings: { "name@marketplace": true }.
@@ -1736,8 +1775,10 @@ export const register: Register = (on, options) => {
     const showMain = !!mainItem || taskList.length > 0
     const kitRows = kitRowsOf(await read($, kit), await enabledPlugins($), nowAt)
     const kitActive = kitRows.filter(k => k.state === 'active').length
-    const kitShown = kitRows.slice(0, SKILL_MAX)
-    const kitMore = kitRows.length - kitShown.length
+    const kitUsed = kitRows.filter(k => k.state !== 'idle')
+    const kitShown = kitUsed.slice(0, SKILL_MAX)
+    const kitMore = kitUsed.length - kitShown.length
+    const kitIdle = kitRows.filter(k => k.state === 'idle')
     const kitText = kitShown.map(k => (
       <Text key={`kit-${k.name}`} wrap="truncate-end">
         <Text color={skillTint(k.name)} dimColor={k.state !== 'active'}>
@@ -1752,12 +1793,14 @@ export const register: Register = (on, options) => {
       </Text>
     ))
     const tasksDone = taskList.filter(t => t.status === 'completed').length
+    // A finished list folds to one line.
+    const isTasksDone = taskList.length > 0 && tasksDone === taskList.length
     const taskRows = taskList.map((t, i) => (
       <Text key={`task-${i}`} wrap="truncate-end">
         <Text color={TASK_COLOR[t.status]} dimColor={t.status === 'pending'}>
           {TASK_GLYPH[t.status]}
         </Text>{' '}
-        <Text dimColor={t.status === 'pending'} bold={t.status === 'in_progress'} strikethrough={t.status === 'completed'}>
+        <Text dimColor={t.status !== 'in_progress'} bold={t.status === 'in_progress'}>
           {t.content}
         </Text>
       </Text>
@@ -1795,7 +1838,7 @@ export const register: Register = (on, options) => {
     const toggleCompact = (
       <Button
         key="compact"
-        label={p.isCompact ? s.expand : s.collapse}
+        label={p.isCompact ? `▾ ${s.expand}` : `▴ ${s.collapse}`}
         plain
         onPress={() => update($, panel, prev => ({ ...prev, isCompact: !prev.isCompact }))}
       />
@@ -1814,11 +1857,18 @@ export const register: Register = (on, options) => {
     if (e.surface === 'desktop' && 'Svg' in ui) {
       const { Svg } = ui
       const W = Math.max(240, Math.min(900, (e.props.bodyColumns || 40) * 8 - 8))
-      const section = (key: string, text: string) => (
-        <Text key={key} dimColor>
-          {text}
-        </Text>
-      )
+      // One heading style: the label bold, the count after it dim.
+      const section = (key: string, text: string) => {
+        const [head, ...rest] = text.split(' · ')
+        return (
+          <Text key={key}>
+            <Text bold dimColor>
+              {head}
+            </Text>
+            {rest.length > 0 && <Text dimColor>{`  ${rest.join(' · ')}`}</Text>}
+          </Text>
+        )
+      }
 
       // In Hebrew the column hugs the right edge: section heads and buttons right-aligned.
       const align = isRtl() ? 'flex-end' : undefined
@@ -1840,13 +1890,13 @@ export const register: Register = (on, options) => {
         ((isEmpty ? 1 : 0) + (running.length > 0 ? 1 : 0) + (finished.length > 0 ? 1 : 0) + (planned.length > 0 ? 1 : 0)) * LINE_H +
         (running.length + shownDone) * 66 +
         planned.length * 46 +
-        (taskList.length > 0 ? 1 + taskList.length : 0) * LINE_H +
+        (taskList.length > 0 ? (isTasksDone ? 1 : 1 + taskList.length) : 0) * LINE_H +
         (bgList.length > 0 ? LINE_H + bgList.length * BG_ROW_H : 0)
-      const rightH = LINE_H + (kitShown.length ? kitShown.length * SKILL_ROW_H : LINE_H) + (kitMore > 0 ? LINE_H : 0)
+      const rightH = LINE_H + kitShown.length * SKILL_ROW_H + (kitMore > 0 ? LINE_H : 0) + kitIdleHeight(kitIdle.length) + (kitRows.length ? 0 : LINE_H)
       const mapH = mapCards > 0 ? mapHeight(W, mapCards, zoom) : 0
       // Every row sits in the absolute overlay, so all of them must size the grid or they are clipped.
       const contentH =
-        headerHeight(title) + LINE_H + (isTwoCol ? Math.max(leftH, rightH) : leftH + rightH) + LINE_H * (2 + (mapNote ? 1 : 0)) + mapH + 8
+        headerHeight(title) + (isTwoCol ? Math.max(leftH, rightH) : leftH + rightH) + RULE_H + LINE_H * (2 + (mapNote ? 1 : 0)) + mapH + 8
       // shortcut: assumes a desktop row is at least GRID_STEP px, so the grid never overshoots the pane; measure if it falls short.
       const gridH = Math.max(contentH, (e.props.scroll?.bodyRows || 0) * GRID_STEP)
       const left = (
@@ -1867,7 +1917,13 @@ export const register: Register = (on, options) => {
             <Svg key={`plan-${pl.n}`} source={plannedSvg(colW, pl)} alt={`${pl.n}. ${pl.title}: ${s.isPlanned}`} width={colW} height={46} />
           ))}
           {taskList.length > 0 && section('h-tasks', `Tasks · ${tasksDone}/${taskList.length}`)}
-          {taskRows}
+          {isTasksDone ? (
+            <Text key="tasks-done">
+              <Text color={DONE}>✓</Text> <Text dimColor>all {taskList.length} done</Text>
+            </Text>
+          ) : (
+            taskRows
+          )}
           {bgList.length > 0 && section('h-bg', `Background · ${bgList.length}`)}
           {bgList.map(t => (
             <Svg key={`bg-${t.id}`} source={bgRowSvg(colW, t, nowAt)} alt={`${t.kind}: ${t.label}, ${t.status}`} width={colW} height={BG_ROW_H} />
@@ -1876,12 +1932,15 @@ export const register: Register = (on, options) => {
       )
       const right = (
         <Box key="col-kit" flexDirection="column" width={isTwoCol ? '50%' : undefined} flexShrink={0} alignItems={align}>
-          {section('h-kit', `Skills & plugins · ${kitActive} active of ${kitRows.length}`)}
-          {kitShown.length === 0 && <Text dimColor>No skills or plugins seen yet.</Text>}
+          {section('h-kit', `Skills & plugins · ${kitActive} active · ${kitIdle.length} idle`)}
+          {kitRows.length === 0 && <Text dimColor>No skills or plugins seen yet.</Text>}
           {kitShown.map(r => (
             <Svg key={`kit-${r.name}`} source={kitRowSvg(colW, r, list, nowAt)} alt={`${r.kind} ${r.name}: ${r.state}`} width={colW} height={SKILL_ROW_H} />
           ))}
-          {kitMore > 0 && <Text dimColor>+{kitMore} more not used</Text>}
+          {kitMore > 0 && <Text dimColor>+{kitMore} more used earlier</Text>}
+          {kitIdle.length > 0 && (
+            <Svg key="kit-idle" source={kitIdleSvg(colW, kitIdle)} alt={`Enabled, not used: ${kitIdle.map(k => k.name).join(', ')}`} width={colW} height={kitIdleHeight(kitIdle.length)} />
+          )}
         </Box>
       )
       return (
@@ -1894,16 +1953,19 @@ export const register: Register = (on, options) => {
           <Box flexDirection="column" position="absolute" top={0} left={0} right={0} alignItems={align}>
             {/* Row 1: cost, tokens and time. */}
             <Svg source={headerSvg(W, title, t)} alt={title ? `${title}: ${summary}` : summary} width={W} height={headerHeight(title)} />
-            {toggleCompact}
             {/* Row 2: the crew beside the skills and plugins. */}
             <Box flexDirection={isTwoCol ? (isRtl() ? 'row-reverse' : 'row') : 'column'}>
               {left}
               {right}
             </Box>
-            {/* Row 3: the project map. */}
+            {/* Row 3: the project map, under a hairline. */}
+            <Svg key="rule" source={ruleSvg(W)} alt="" width={W} height={RULE_H} />
             {section('h-map', project.map ? `Map · ${shownMap.total} communities from graphify` : 'Map')}
             {mapNote && <Text dimColor>{mapNote}</Text>}
-            {mapButton}
+            <Box key="map-row" flexDirection="row" gap={3}>
+              {mapButton}
+              {toggleCompact}
+            </Box>
             {mapCards > 0 && (
               <Svg
                 key="map"
