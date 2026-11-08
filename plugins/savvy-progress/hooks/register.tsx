@@ -908,10 +908,127 @@ const ZOOMS: Record<Zoom, { w: number; h: number; max: number }> = {
 export const zoomOf = (v: unknown): Zoom => (v === 0 || v === 2 ? v : 1)
 const CARD_GAP = 8
 const MAP_PAD = 4
-const mapCols = (W: number, z: Zoom): number => Math.max(1, Math.floor((W - MAP_PAD * 2 + CARD_GAP) / (ZOOMS[z].w + CARD_GAP)))
 export const mapCardCount = (p: ProjectMap, hasOff: boolean, z: Zoom): number => Math.min(p.communities.length, ZOOMS[z].max) + (hasOff ? 1 : 0)
-export const mapHeight = (W: number, n: number, z: Zoom): number =>
-  MAP_PAD * 2 + Math.ceil(n / mapCols(W, z)) * (ZOOMS[z].h + CARD_GAP) - CARD_GAP + 26
+
+// The Map's layout: a force-directed graph. Communities graphify links with more calls and
+// references pull closer; every card pushes the others away; a light pull to the centre
+// keeps loose ones near. It runs in card units (one card plus its gap is 1 × 1), so wide,
+// short cards space evenly, then overlaps are pushed apart and the result scaled to pixels.
+// Deterministic: the same graph, width and zoom always lay out the same.
+export type MapLayout = { ids: number[]; pos: Map<number, { x: number; y: number }>; w: number; h: number; H: number }
+const LEGEND_H = 26
+const layoutCache = new Map<string, MapLayout>()
+export const mapLayout = (W: number, p: ProjectMap, hasOff: boolean, z: Zoom): MapLayout => {
+  const Z = ZOOMS[z]
+  const ids = [...p.communities.slice(0, Z.max).map(c => c.id), ...(hasOff ? [OFF_CODE] : [])]
+  const key = `${p.mtimeMs}|${p.total}|${W}|${z}|${ids.join(',')}`
+  const hit = layoutCache.get(key)
+  if (hit) return hit
+  const gx = z === 0 ? 18 : 26
+  const gy = z === 0 ? 16 : 22
+  const unitX = Z.w + gx
+  const unitY = Z.h + gy
+  const umax = Math.max(0, (W - MAP_PAD * 2 - Z.w) / unitX)
+  const n = ids.length
+  const at = new Map(ids.map((id, i) => [id, i]))
+  const links = p.links.flatMap(([a, b, w]) => {
+    const i = at.get(a)
+    const j = at.get(b)
+    return i === undefined || j === undefined ? [] : [{ i, j, w }]
+  })
+  // A golden-angle spiral from the centre, largest first: a calm, repeatable start.
+  const cu = umax / 2
+  const pts = ids.map((_, i) => ({ u: cu + Math.cos(i * 2.39996) * Math.sqrt(i) * 0.9, v: Math.sin(i * 2.39996) * Math.sqrt(i) * 0.9 }))
+  const k = 1.05
+  const steps = 360
+  for (let s = 0; s < steps; s++) {
+    const temp = 0.5 * (1 - s / steps) + 0.01
+    const d = pts.map(() => ({ u: 0, v: 0 }))
+    for (let i = 0; i < n; i++)
+      for (let j = i + 1; j < n; j++) {
+        const pi = pts[i]!
+        const pj = pts[j]!
+        const du = pi.u - pj.u || 0.01
+        const dv = pi.v - pj.v || 0.01
+        const dist = Math.max(0.05, Math.hypot(du, dv))
+        // Short range only: far cards leave each other alone, so the map stays compact.
+        if (dist > 2.2) continue
+        const f = (k * k) / dist
+        d[i]!.u += (du / dist) * f
+        d[i]!.v += (dv / dist) * f
+        d[j]!.u -= (du / dist) * f
+        d[j]!.v -= (dv / dist) * f
+      }
+    for (const { i, j, w } of links) {
+      const pi = pts[i]!
+      const pj = pts[j]!
+      const du = pi.u - pj.u
+      const dv = pi.v - pj.v
+      const dist = Math.max(0.05, Math.hypot(du, dv))
+      // More links between two communities, a stronger pull: they settle closer.
+      const f = ((dist * dist) / k) * (0.6 + Math.log2(1 + w) * 0.5)
+      d[i]!.u -= (du / dist) * f
+      d[i]!.v -= (dv / dist) * f
+      d[j]!.u += (du / dist) * f
+      d[j]!.v += (dv / dist) * f
+    }
+    pts.forEach((pt, i) => {
+      const di = d[i]!
+      // The pane is narrow and tall: pull harder up and down than side to side.
+      di.u += (cu - pt.u) * 0.3
+      di.v += -pt.v * 0.35
+      const len = Math.hypot(di.u, di.v) || 1
+      const step = Math.min(len, temp)
+      pt.u = Math.max(0, Math.min(umax, pt.u + (di.u / len) * step))
+      pt.v += (di.v / len) * step
+    })
+  }
+  // No two cards overlap: push each overlapping pair apart along the shorter overlap.
+  for (let pass = 0; pass < 80; pass++) {
+    let moved = false
+    for (let i = 0; i < n; i++)
+      for (let j = i + 1; j < n; j++) {
+        const pi = pts[i]!
+        const pj = pts[j]!
+        const ou = 1 - Math.abs(pi.u - pj.u)
+        const ov = 1 - Math.abs(pi.v - pj.v)
+        if (ou <= 0 || ov <= 0) continue
+        moved = true
+        const canU = ou < ov
+        if (canU) {
+          const sgn = pi.u < pj.u ? -1 : 1
+          pi.u = Math.max(0, Math.min(umax, pi.u + (sgn * ou) / 2 + sgn * 0.01))
+          pj.u = Math.max(0, Math.min(umax, pj.u - (sgn * ou) / 2 - sgn * 0.01))
+          // Pinned against an edge: make way down instead.
+          if (1 - Math.abs(pi.u - pj.u) > 0.02) {
+            const sv = pi.v < pj.v ? -1 : 1
+            pi.v += (sv * ov) / 2 + sv * 0.01
+            pj.v -= (sv * ov) / 2 + sv * 0.01
+          }
+        } else {
+          const sv = pi.v < pj.v ? -1 : 1
+          pi.v += (sv * ov) / 2 + sv * 0.01
+          pj.v -= (sv * ov) / 2 + sv * 0.01
+        }
+      }
+    if (!moved) break
+  }
+  const vmin = Math.min(0, ...pts.map(pt => pt.v))
+  const pos = new Map(ids.map((id, i) => [id, { x: MAP_PAD + pts[i]!.u * unitX, y: MAP_PAD + (pts[i]!.v - vmin) * unitY }]))
+  const bottom = Math.max(0, ...[...pos.values()].map(q => q.y + Z.h))
+  const out: MapLayout = { ids, pos, w: Z.w, h: Z.h, H: Math.round(bottom + MAP_PAD + LEGEND_H) }
+  if (layoutCache.size > 40) layoutCache.clear()
+  layoutCache.set(key, out)
+  return out
+}
+
+// Where the line from a card's centre toward a point leaves the card.
+const edgePoint = (cx: number, cy: number, hw: number, hh: number, tx: number, ty: number) => {
+  const dx = tx - cx
+  const dy = ty - cy
+  const t = Math.min(dx ? hw / Math.abs(dx) : Infinity, dy ? hh / Math.abs(dy) : Infinity)
+  return { x: cx + dx * t, y: cy + dy * t }
+}
 
 const KIND: Record<WorkKind, [glyph: string, color: string, word: string]> = {
   read: ['◇', '#6AAABD', 'read'],
@@ -1049,13 +1166,12 @@ export const mapSvg = (W: number, p: ProjectMap, placed: Map<number, Crew[]>, to
   const off = placed.get(OFF_CODE) ?? []
   const shown = p.communities.slice(0, Z.max)
   const cards = [...shown.map(c => ({ id: c.id, c })), ...(off.length ? [{ id: OFF_CODE, c: null }] : [])]
-  const cols = mapCols(W, z)
-  // Cards share the row's spare width, so the grid fills it edge to edge.
-  const cw = (W - MAP_PAD * 2 - (cols - 1) * CARD_GAP) / cols
-  const ch = Z.h
-  const spot = (i: number) => ({ x: MAP_PAD + (i % cols) * (cw + CARD_GAP), y: MAP_PAD + Math.floor(i / cols) * (ch + CARD_GAP) })
+  const L = mapLayout(W, p, off.length > 0, z)
+  const cw = L.w
+  const ch = L.h
+  const spot = (i: number) => L.pos.get(cards[i]?.id ?? 0) ?? { x: MAP_PAD, y: MAP_PAD }
   const index = new Map(cards.map((k, i) => [k.id, i]))
-  const H = mapHeight(W, cards.length, z)
+  const H = L.H
 
   const wires = p.links.slice(0, 14).flatMap(([a, b, w]) => {
     const i = index.get(a)
@@ -1063,13 +1179,12 @@ export const mapSvg = (W: number, p: ProjectMap, placed: Map<number, Crew[]>, to
     if (i === undefined || j === undefined) return []
     const s = spot(i)
     const t = spot(j)
-    const sameRow = s.y === t.y
-    const [x1, y1, x2, y2] = sameRow
-      ? [s.x + (s.x < t.x ? cw : 0), s.y + ch / 2, t.x + (s.x < t.x ? 0 : cw), t.y + ch / 2]
-      : [s.x + cw / 2, s.y + (s.y < t.y ? ch : 0), t.x + cw / 2, t.y + (s.y < t.y ? 0 : ch)]
-    const bend = sameRow ? `C${(x1 + x2) / 2} ${y1} ${(x1 + x2) / 2} ${y2}` : `C${x1} ${(y1 + y2) / 2} ${x2} ${(y1 + y2) / 2}`
+    // Straight from edge to edge, along the line between the two cards' centres.
+    const [ax, ay, bx, by] = [s.x + cw / 2, s.y + ch / 2, t.x + cw / 2, t.y + ch / 2]
+    const { x: x1, y: y1 } = edgePoint(ax, ay, cw / 2, ch / 2, bx, by)
+    const { x: x2, y: y2 } = edgePoint(bx, by, cw / 2, ch / 2, ax, ay)
     return [
-      `<path class="wire" d="M${x1} ${y1} ${bend} ${x2} ${y2}" fill="none" stroke-width="${1 + Math.min(2, Math.log2(w) / 2)}"/><circle class="wdot" cx="${x1}" cy="${y1}" r="2.5"/><circle class="wdot" cx="${x2}" cy="${y2}" r="2.5"/>`,
+      `<path class="wire" d="M${x1} ${y1} L${x2} ${y2}" fill="none" stroke-width="${1 + Math.min(2, Math.log2(w) / 2)}"/><circle class="wdot" cx="${x1}" cy="${y1}" r="2.5"/><circle class="wdot" cx="${x2}" cy="${y2}" r="2.5"/>`,
     ]
   })
 
@@ -1900,7 +2015,7 @@ export const register: Register = (on, options) => {
         (taskList.length > 0 ? (isTasksDone ? 1 : 1 + taskList.length) : 0) * LINE_H +
         (bgList.length > 0 ? LINE_H + bgList.length * BG_ROW_H : 0)
       const rightH = LINE_H + kitShown.length * SKILL_ROW_H + (kitMore > 0 ? LINE_H : 0) + kitIdleHeight(kitIdle.length) + (kitRows.length ? 0 : LINE_H)
-      const mapH = mapCards > 0 ? mapHeight(W, mapCards, zoom) : 0
+      const mapH = mapCards > 0 ? mapLayout(W, shownMap, placed.has(OFF_CODE), zoom).H : 0
       // Every row sits in the absolute overlay, so all of them must size the grid or they are clipped.
       const contentH =
         headerHeight(title) + (isTwoCol ? Math.max(leftH, rightH) : leftH + rightH) + RULE_H + LINE_H * (2 + (mapNote ? 1 : 0)) + mapH + 8

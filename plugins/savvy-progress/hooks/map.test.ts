@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { bandSvg, crewOf, kitLabel, kitOf, kitRowsOf, mapHeight, mapSvg, OFF_CODE, placeCrew, projectOf, usageSvg, useKit, workOf, zoomOf } from './register'
+import { bandSvg, crewOf, kitLabel, kitOf, kitRowsOf, mapLayout, mapSvg, OFF_CODE, placeCrew, projectOf, usageSvg, useKit, workOf, zoomOf } from './register'
 
 test('a tool call becomes one map line', () => {
   expect(workOf('Edit', { file_path: 'C:\\repo\\src\\app.ts' })).toEqual(['edit', 'src/app.ts'])
@@ -82,7 +82,7 @@ test('the map zooms: smaller cards fit more per row and show more communities', 
   const p = projectOf(graph, 5)
   expect(zoomOf(undefined)).toBe(1)
   expect(zoomOf(0)).toBe(0)
-  expect(mapHeight(600, 6, 0)).toBeLessThan(mapHeight(600, 6, 2))
+  expect(mapLayout(600, p, false, 0).H).toBeLessThan(mapLayout(600, p, false, 2).H)
   const small = mapSvg(600, p, new Map(), [], 0)
   const big = mapSvg(600, p, new Map(), [], 2)
   expect(small).not.toContain(' sym<')
@@ -100,4 +100,24 @@ test('a plugin:skill name reads as the skill, its plugin after when different', 
   expect(kitLabel('ui-ux-pro-max:ui-ux-pro-max')).toBe('ui-ux-pro-max')
   expect(kitLabel('taste-skill:design-taste-frontend')).toBe('design-taste-frontend · taste-skill')
   expect(kitLabel('graphify')).toBe('graphify')
+})
+
+test('the map lays cards out by their links: none overlap, linked ones sit closer', () => {
+  const nodes = Array.from({ length: 8 }, (_, i) => ({ id: `n${i}`, community: i, community_name: `c${i}`, source_file: `f${i}.ts` }))
+  // c0 and c1 share many links; c0 and c7 none.
+  const links = [...Array.from({ length: 12 }, () => ({ source: 'n0', target: 'n1' })), { source: 'n2', target: 'n3' }]
+  const p = projectOf(JSON.stringify({ nodes, links }), 1)
+  const L = mapLayout(600, p, true, 1)
+  const box = [...L.pos.values()]
+  for (let i = 0; i < box.length; i++)
+    for (let j = i + 1; j < box.length; j++) {
+      const a = box[i]!
+      const b = box[j]!
+      const apart = Math.abs(a.x - b.x) >= L.w || Math.abs(a.y - b.y) >= L.h
+      expect(apart).toBe(true)
+    }
+  for (const q of box) expect(q.x + L.w).toBeLessThanOrEqual(600)
+  const d = (a: number, b: number) => Math.hypot(L.pos.get(a)!.x - L.pos.get(b)!.x, L.pos.get(a)!.y - L.pos.get(b)!.y)
+  expect(d(0, 1)).toBeLessThan(d(0, 7))
+  expect(mapLayout(600, p, true, 1)).toBe(L)
 })
