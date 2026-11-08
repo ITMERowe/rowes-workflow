@@ -102,6 +102,8 @@ export type BgTask = {
   status: 'running' | 'done' | 'failed'
   startedAt: number
   endedAt?: number
+  /** When it is over at the latest (a Monitor's timeout): past it, a lost notice no longer keeps it running. */
+  endsBy?: number
 }
 
 declare module 'claude-code' {

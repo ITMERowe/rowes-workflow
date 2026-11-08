@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { bandSvg, cardAt, crewOf, kitLabel, kitOf, kitRowsOf, mapLayout, mapSvg, OFF_CODE, placeCrew, projectOf, usageSvg, useKit, workOf, zoomOf } from './register'
+import { bandSvg, cardAt, crewOf, isOverdue, kitLabel, kitOf, kitRowsOf, mapLayout, mapSvg, OFF_CODE, placeCrew, projectOf, usageSvg, useKit, workOf, zoomOf } from './register'
 
 test('a tool call becomes one map line', () => {
   expect(workOf('Edit', { file_path: 'C:\\repo\\src\\app.ts' })).toEqual(['edit', 'src/app.ts'])
@@ -132,4 +132,14 @@ test('a wheel tick scrolls the card under the pointer', () => {
   expect(cardAt(rects, 50, 10)?.key).toBe('kit')
   expect(cardAt(rects, 10, 40)?.key).toBe('map')
   expect(cardAt(rects, 10, 1)).toBeUndefined()
+})
+
+test('a background task whose end notice never came stops counting as running', () => {
+  const t = { id: 'm', kind: 'monitor' as const, label: 'watch', status: 'running' as const, startedAt: 0, endsBy: 125_000 }
+  expect(isOverdue(t, 100_000)).toBe(false)
+  expect(isOverdue(t, 130_000)).toBe(true)
+  // Stored before endsBy existed: an hour is the cap.
+  expect(isOverdue({ ...t, endsBy: undefined }, 59 * 60_000)).toBe(false)
+  expect(isOverdue({ ...t, endsBy: undefined }, 61 * 60_000)).toBe(true)
+  expect(isOverdue({ ...t, status: 'done' }, 1e12)).toBe(false)
 })

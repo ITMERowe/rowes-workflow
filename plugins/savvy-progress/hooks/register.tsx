@@ -1521,11 +1521,17 @@ export const applyPlan = (list: Task[], e: Record<string, unknown>): Task[] => {
 const TASK_GLYPH: Record<TaskStatus, string> = { completed: '✓', in_progress: '◐', pending: '○' }
 const TASK_COLOR: Record<TaskStatus, string | undefined> = { completed: DONE, in_progress: ACCENT, pending: undefined }
 
-async function track($: EngineInterface, id: string, kind: BgTask['kind'], label: string): Promise<void> {
+async function track($: EngineInterface, id: string, kind: BgTask['kind'], label: string, lastsMs = BG_MAX_MS): Promise<void> {
   const at = await $.clock.now()
-  await update($, bg, list => [...list.filter(t => t.id !== id), { id, kind, label: label.slice(0, 120), status: 'running' as const, startedAt: at }].slice(-100))
+  await update($, bg, list =>
+    [...list.filter(t => t.id !== id), { id, kind, label: label.slice(0, 120), status: 'running' as const, startedAt: at, endsBy: at + lastsMs }].slice(-100),
+  )
   await update($, now, () => at)
 }
+// A background task whose end notice never came stops counting as running after this, so the
+// 1s clock (which redraws the whole panel) goes quiet. Monitors use their own timeout.
+const BG_MAX_MS = 60 * 60_000
+export const isOverdue = (t: BgTask, at: number): boolean => t.status === 'running' && at > (t.endsBy ?? t.startedAt + BG_MAX_MS)
 
 async function autoOpen($: EngineInterface, key: string): Promise<void> {
   const p = await read($, panel)
@@ -1598,6 +1604,8 @@ export const register: Register = (on, options) => {
     $.clock.every(1000, () => {
       void (async () => {
         const at = await $.clock.now()
+        if ((await read($, bg)).some(t => isOverdue(t, at)))
+          await update($, bg, list => list.map((t): BgTask => (isOverdue(t, at) ? { ...t, status: 'done', endedAt: t.endsBy ?? at } : t)))
         const isRunning = (await read($, agents)).some(a => a.status === 'running') || (await read($, bg)).some(t => t.status === 'running')
         const lastWork = (await read($, work)).at(-1)?.at ?? 0
         const lastKit = Math.max(0, ...(await read($, kit)).map(u => u.at))
@@ -1680,14 +1688,16 @@ export const register: Register = (on, options) => {
   on('tool.call', { tool: 'Monitor' }, async ($, e, next) => {
     const r = await next(e)
     const id = (r as { result?: { taskId?: string } }).result?.taskId
-    if (id) await track($, id, 'monitor', String(e.description || 'monitor'))
+    const lasts = Math.min(3_600_000, Number((e as { timeout_ms?: unknown }).timeout_ms) || 300_000) + 5000
+    if (id) await track($, id, 'monitor', String(e.description || 'monitor'), lasts)
     return r
   })
   // A background task's notification names the task and how it ended.
   on('prompt.submit', async ($, e, next) => {
     if (e.origin?.kind === 'task-notification') {
       const id = /<task-id>([^<]+)<\/task-id>/.exec(e.text)?.[1]
-      const state = /<status>([^<]+)<\/status>/.exec(e.text)?.[1]
+      // A Monitor's expiry notice has no <status>, only "[Monitor expired …]" in its event.
+      const state = /<status>([^<]+)<\/status>/.exec(e.text)?.[1] ?? (/\[Monitor (expired|timed out|stopped)/i.test(e.text) ? 'completed' : undefined)
       if (id && state && state !== 'running') {
         const at = await $.clock.now()
         await update($, bg, list =>
@@ -2152,10 +2162,16 @@ export const register: Register = (on, options) => {
       const mapOff = Math.min(p.offsets?.map ?? 0, mapMax)
       rects.push({ key: 'map', x: 0, y: mapY, w: W, h: mapCardH, max: mapMax, step: MAP_STEP })
       cardRects = rects
-      // A cropped map keeps its legend strip (the bottom MAP_LEGEND px) pinned under the window.
-      const MAP_LEGEND = 20
+      // The map is drawn once per draw; a cropped one shows a window of it, its legend as a text row under it.
+      const MAP_LEGEND = LINE_H
+      const mapStr = mapCards > 0 && mapView > 0 ? mapSvg(mapW, shownMap, placed, touched, zoom) : ''
       const mapCrop = (y: number, ht: number) =>
-        `<svg xmlns="http://www.w3.org/2000/svg" width="${mapW}" height="${ht}" viewBox="0 ${y} ${mapW} ${ht}">${mapSvg(mapW, shownMap, placed, touched, zoom)}</svg>`
+        `<svg xmlns="http://www.w3.org/2000/svg" width="${mapW}" height="${ht}" viewBox="0 ${y} ${mapW} ${ht}">${mapStr}</svg>`
+      const legendRow = (
+        <Text key="map-legend" dimColor wrap="truncate-end">
+          {(Object.keys(KIND) as WorkKind[]).map(k => `${KIND[k][0]} ${KIND[k][2]}`).join('    ')}
+        </Text>
+      )
       const mapAlt = `Project map: ${mapCards} communities, zoom ${zoom}, ${crewList.length} working`
       const mapCard = (
         <Box key="card-map" flexDirection="column" borderStyle="round" borderColor={EDGE} paddingX={1} marginTop={1}>
@@ -2169,11 +2185,11 @@ export const register: Register = (on, options) => {
             {mapButton}
             {toggleCompact}
           </Box>
-          {mapCards > 0 && mapView > 0 && mapView >= mapFull && <Svg key="map" source={mapSvg(mapW, shownMap, placed, touched, zoom)} alt={mapAlt} width={mapW} height={mapFull} />}
+          {mapCards > 0 && mapView > 0 && mapView >= mapFull && <Svg key="map" source={mapStr} alt={mapAlt} width={mapW} height={mapFull} />}
           {mapCards > 0 && mapView > MAP_LEGEND && mapView < mapFull && (
             <Box key="map-crop" flexDirection="column">
               <Svg key="map" source={mapCrop(mapOff, mapView - MAP_LEGEND)} alt={mapAlt} width={mapW} height={mapView - MAP_LEGEND} />
-              <Svg key="map-legend" source={mapCrop(mapFull - MAP_LEGEND, MAP_LEGEND)} alt="Map legend" width={mapW} height={MAP_LEGEND} />
+              {legendRow}
             </Box>
           )}
           {fill && spacer('map-pad', mapW, mapCardH - CARD_CHROME - mapHeadH - mapView)}
