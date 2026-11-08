@@ -3,8 +3,8 @@
   "version": "1.2.1",
   "description": "One band above the prompt (savvy-flow progress and plan usage) and an agents panel (/agents-info): subagents, background tasks, the task list, and a project map from graphify showing who works where.",
   "dependencies": [
-    "ponytail",
-    "ribbon"
+    "ponytail@ponytail",
+    "ribbon@robonuggets"
   ],
   "author": {
     "name": "johnnyvizz",
