@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { bandSvg, crewOf, kitLabel, kitOf, kitRowsOf, mapLayout, mapSvg, OFF_CODE, placeCrew, projectOf, usageSvg, useKit, workOf, zoomOf } from './register'
+import { bandSvg, cardAt, crewOf, kitLabel, kitOf, kitRowsOf, mapLayout, mapSvg, OFF_CODE, placeCrew, projectOf, usageSvg, useKit, workOf, zoomOf } from './register'
 
 test('a tool call becomes one map line', () => {
   expect(workOf('Edit', { file_path: 'C:\\repo\\src\\app.ts' })).toEqual(['edit', 'src/app.ts'])
@@ -120,4 +120,16 @@ test('the map lays cards out by their links: none overlap, linked ones sit close
   const d = (a: number, b: number) => Math.hypot(L.pos.get(a)!.x - L.pos.get(b)!.x, L.pos.get(a)!.y - L.pos.get(b)!.y)
   expect(d(0, 1)).toBeLessThan(d(0, 7))
   expect(mapLayout(600, p, true, 1)).toBe(L)
+})
+
+test('a wheel tick scrolls the card under the pointer', () => {
+  const rects = [
+    { key: 'crew', x: 0, y: 54, w: 300, h: 400, max: 5, step: 1 },
+    { key: 'kit', x: 300, y: 54, w: 300, h: 400, max: 0, step: 1 },
+    { key: 'map', x: 0, y: 470, w: 600, h: 300, max: 200, step: 48 },
+  ]
+  expect(cardAt(rects, 2, 10)?.key).toBe('crew')
+  expect(cardAt(rects, 50, 10)?.key).toBe('kit')
+  expect(cardAt(rects, 10, 40)?.key).toBe('map')
+  expect(cardAt(rects, 10, 1)).toBeUndefined()
 })

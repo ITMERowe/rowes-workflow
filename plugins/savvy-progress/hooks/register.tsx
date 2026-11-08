@@ -39,6 +39,20 @@ const STEP_BRIEF = `
 
 Progress reporting: before any other work, call \`${STEP_TOOL}\` with \`total\` (your plan in 3-8 steps) and \`done: 0\`; call it again with \`done\` and a few-word \`note\` as each step finishes. It only draws a progress bar.`
 const PANE = 'savvy-agents'
+
+// Each desktop card's box in pane px and how far it scrolls (list cards in items, the map in px).
+type CardRect = { key: string; x: number; y: number; w: number; h: number; max: number; step: number }
+// Set by the last desktop draw; the wheel hook reads it to find the card under the pointer.
+let cardRects: CardRect[] = []
+const MAP_STEP = 48
+const scrollCard = ($: EngineInterface, key: string, d: number, max: number) =>
+  update($, panel, prev => ({ ...prev, offsets: { ...prev.offsets, [key]: Math.max(0, Math.min(max, Math.min(prev.offsets?.[key] ?? 0, max) + d)) } }))
+// The card under a wheel tick, from the pointer's cell. shortcut: a desktop cell is 8 px wide and GRID_STEP tall, as W and paneH assume.
+export const cardAt = (rects: readonly CardRect[], column: number, row: number): CardRect | undefined => {
+  const x = column * 8
+  const y = row * 16
+  return rects.find(r => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h)
+}
 const PHASES: readonly Phase[] = ['plan', 'design', 'delegate', 'review', 'close']
 const TIERS: readonly string[] = ['fable', 'heavy', 'careful', 'medium', 'light']
 // The tools' schemas are advice to the model, not a check: what a call may ask
@@ -1855,6 +1869,14 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
+  // The wheel over a card scrolls that card, not the pane: the pane is sized to fit.
+  on('ui.scroll', { requestId: PANE }, async ($, e, next) => {
+    const r = e.pointer && e.origin.kind === 'person' ? cardAt(cardRects, e.pointer.column, e.pointer.row) : undefined
+    if (!r || r.max === 0) return next(e)
+    await scrollCard($, r.key, Math.sign(e.by) * Math.max(1, Math.abs(e.by)) * r.step, r.max)
+    return {}
+  })
+
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const s = tr()
     const ui = $.ui.resolve(e)
@@ -2006,158 +2028,160 @@ export const register: Register = (on, options) => {
       const isTwoCol = W >= 560
       // Each section is a bordered card with a header; rows inside are inset by its border and padding.
       const CARD_IN = 24
-      const CARD_EXTRA = LINE_H * 2 + 8
+      // A card's header row and its top and bottom border.
+      const CARD_CHROME = LINE_H + 12
       const colW = (isTwoCol ? Math.floor(W / 2) - 18 : W) - CARD_IN
       const mapW = W - CARD_IN
 
-      // Every section folds and scrolls on its own, sized so the whole pane fits without scrolling.
+      // A section header hides or shows all of its rows; each card scrolls on its own under the wheel.
       const folded = (k: string) => (k === 'done' ? p.isDoneCollapsed : !!p.collapsed?.[k])
       const fold = (k: string) =>
         update($, panel, prev =>
           k === 'done' ? { ...prev, isDoneCollapsed: !prev.isDoneCollapsed } : { ...prev, collapsed: { ...prev.collapsed, [k]: !prev.collapsed?.[k] } },
         )
-      // Steps from the stored offset, not the drawn one, so presses before a redraw all count.
-      const scrollBy = (k: string, d: number, max: number) =>
-        update($, panel, prev => ({ ...prev, offsets: { ...prev.offsets, [k]: Math.max(0, Math.min(max, Math.min(prev.offsets?.[k] ?? 0, max) + d)) } }))
-      // shortcut: assumes a desktop row is GRID_STEP px (as gridH does); 0 rows means unknown, so nothing is capped.
-      const paneH = (e.props.scroll?.bodyRows || 0) * GRID_STEP || Infinity
-      const mapFull = mapCards > 0 ? mapLayout(mapW, shownMap, placed.has(OFF_CODE), zoom).H : 0
-      const mapChrome = CARD_EXTRA + LINE_H * (2 + (mapNote ? 1 : 0)) + 16
-      // The map takes at most 40% of the pane; the crew gets what is left.
-      const mapView = folded('map') ? 0 : Math.min(mapFull, Math.max(160, Math.floor(paneH * 0.4)))
-      const lists = [
-        { key: 'run', n: running.length, h: 66 },
-        { key: 'done', n: finished.length, h: 66 },
-        { key: 'plan', n: planned.length, h: 46 },
-        { key: 'tasks', n: isTasksDone ? 0 : taskList.length, h: LINE_H },
-        { key: 'bg', n: bgList.length, h: BG_ROW_H },
+      type Item = { key: string; h: number; node: unknown }
+      const sectionHead = (k: string, label: string, count: string): Item => ({
+        key: `h-${k}`,
+        h: LINE_H,
+        node: <Button key={`fold-${k}`} label={`${folded(k) ? (isRtl() ? '◂' : '▸') : '▾'} ${label} · ${count}`} plain onPress={() => fold(k)} />,
+      })
+      const rows = <T,>(k: string, items: T[], h: number, draw: (x: T) => unknown, key: (x: T) => string): Item[] =>
+        folded(k) ? [] : items.map(x => ({ key: key(x), h, node: draw(x) }))
+
+      const crewItems: Item[] = [
+        ...(showMain
+          ? [{ key: 'main', h: MAIN_ROW_H, node: <Svg key="main" source={mainRowSvg(colW, mainStep, mainItem, isMainWorking)} alt={`Main session: ${mainStep}`} width={colW} height={MAIN_ROW_H} /> }]
+          : []),
+        ...(isEmpty ? [{ key: 'empty', h: LINE_H, node: <Text key="empty" dimColor>{s.empty}</Text> }] : []),
+        ...(running.length ? [sectionHead('run', s.running, String(running.length))] : []),
+        ...rows('run', running, 66, a => <Svg key={a.id} source={agentSvg(colW, a, at)} alt={`${a.description}: ${modelName(a.model)}, ${s.isRunning}`} width={colW} height={66} />, a => a.id),
+        ...(finished.length ? [sectionHead('done', s.finished, String(finished.length))] : []),
+        ...rows('done', finished, 66, a => <Svg key={a.id} source={agentSvg(colW, a, at)} alt={`${a.description}: ${modelName(a.model)}, ${s.isFinished}`} width={colW} height={66} />, a => a.id),
+        ...(planned.length ? [sectionHead('plan', s.planned, String(planned.length))] : []),
+        ...rows('plan', planned, 46, pl => <Svg key={`plan-${pl.n}`} source={plannedSvg(colW, pl)} alt={`${pl.n}. ${pl.title}: ${s.isPlanned}`} width={colW} height={46} />, pl => `plan-${pl.n}`),
+        ...(taskList.length ? [sectionHead('tasks', 'Tasks', `${tasksDone}/${taskList.length}`)] : []),
+        ...(isTasksDone
+          ? rows('tasks', [0], LINE_H, () => (
+              <Text key="tasks-done">
+                <Text color={DONE}>✓</Text> <Text dimColor>all {taskList.length} done</Text>
+              </Text>
+            ), () => 'tasks-done')
+          : rows('tasks', taskRows.map((r, i) => ({ r, i })), LINE_H, x => x.r, x => `task-${x.i}`)),
+        ...(bgList.length ? [sectionHead('bg', 'Background', String(bgList.length))] : []),
+        ...rows('bg', bgList, BG_ROW_H, t => <Svg key={`bg-${t.id}`} source={bgRowSvg(colW, t, nowAt)} alt={`${t.kind}: ${t.label}, ${t.status}`} width={colW} height={BG_ROW_H} />, t => `bg-${t.id}`),
       ]
-      const isDoneLine = isTasksDone && !folded('tasks')
-      const rightH = LINE_H + kitShown.length * SKILL_ROW_H + (kitMore > 0 ? LINE_H : 0) + kitIdleHeight(kitIdle.length) + (kitRows.length ? 0 : LINE_H) + CARD_EXTRA
-      const heads = lists.filter(l => l.n > 0 || (l.key === 'tasks' && taskList.length > 0)).length
-      let room =
-        paneH - headerHeight(title) - mapChrome - (folded('map') ? 0 : mapView) - CARD_EXTRA - (showMain ? MAIN_ROW_H : 0) - (heads + (isDoneLine ? 1 : 0)) * LINE_H - (isTwoCol ? 0 : rightH)
-      // Hand out rows one at a time, round robin, so every open section shows something.
-      const fit: Record<string, number> = {}
-      for (const l of lists) fit[l.key] = 0
-      for (let grew = true; grew; ) {
-        grew = false
-        for (const l of lists) {
-          if (folded(l.key) || fit[l.key] >= l.n || (l.h > room && fit[l.key] > 0)) continue
-          fit[l.key]++
-          room -= l.h
-          grew = true
+      const kitItems: Item[] = [
+        ...(kitRows.length === 0 ? [{ key: 'kit-none', h: LINE_H, node: <Text key="kit-none" dimColor>No skills or plugins seen yet.</Text> }] : []),
+        ...kitShown.map(r => ({ key: `kit-${r.name}`, h: SKILL_ROW_H, node: <Svg key={`kit-${r.name}`} source={kitRowSvg(colW, r, list, nowAt)} alt={`${r.kind} ${r.name}: ${r.state}`} width={colW} height={SKILL_ROW_H} /> })),
+        ...(kitMore > 0 ? [{ key: 'kit-more', h: LINE_H, node: <Text key="kit-more" dimColor>+{kitMore} more used earlier</Text> }] : []),
+        ...(kitIdle.length
+          ? [{ key: 'kit-idle', h: kitIdleHeight(kitIdle.length), node: <Svg key="kit-idle" source={kitIdleSvg(colW, kitIdle)} alt={`Enabled, not used: ${kitIdle.map(k => k.name).join(', ')}`} width={colW} height={kitIdleHeight(kitIdle.length)} /> }]
+          : []),
+      ]
+      const sum = (items: Item[]) => items.reduce((n, i) => n + i.h, 0)
+
+      // Card heights: the pane is shared out so the cards fill it and only their insides scroll.
+      // shortcut: assumes a desktop row is GRID_STEP px (as the grid does); with no bodyRows the cards take their natural height.
+      const paneH = (e.props.scroll?.bodyRows || 0) * GRID_STEP
+      const MAP_TOP = GRID_STEP
+      const headerH = headerHeight(title)
+      const mapFull = mapCards > 0 ? mapLayout(mapW, shownMap, placed.has(OFF_CODE), zoom).H : 0
+      const mapHeadH = LINE_H * (1 + (mapNote ? 1 : 0))
+      const mapNat = CARD_CHROME + mapHeadH + (folded('map') ? 0 : mapFull)
+      const crewNat = CARD_CHROME + sum(crewItems)
+      const kitNat = CARD_CHROME + sum(kitItems)
+      const row2Nat = isTwoCol ? Math.max(crewNat, kitNat) : crewNat + kitNat
+      const avail = paneH - headerH - MAP_TOP - 8
+      const fill = paneH > 0 && avail > 200
+      const mapCardH = !fill || folded('map') ? mapNat : Math.min(mapNat, Math.max(Math.floor(avail * 0.45), avail - row2Nat))
+      const row2H = fill ? avail - mapCardH : row2Nat
+      const crewH = !fill ? crewNat : isTwoCol ? row2H : Math.min(crewNat, Math.max(Math.floor(row2H * 0.6), row2H - kitNat))
+      const kitH = !fill ? kitNat : isTwoCol ? row2H : row2H - crewH
+
+      // Where each card sits, in pane px, so a wheel tick over a card scrolls that card (the ui.scroll hook reads it).
+      const rects: CardRect[] = []
+      // The last first-item that still fills the card: scrolling stops there.
+      const lastStart = (items: Item[], bodyH: number) => {
+        let h = 0
+        for (let i = items.length - 1; i >= 0; i--) {
+          h += items[i].h
+          if (h > bodyH) return i + 1
         }
+        return 0
       }
-      const win = <T,>(k: string, items: T[]): T[] => {
-        const off = Math.min(p.offsets?.[k] ?? 0, Math.max(0, items.length - fit[k]))
-        return folded(k) ? [] : items.slice(off, off + fit[k])
-      }
-      const head = (k: string, label: string, n: number, count = String(n)) => {
-        const shown = folded(k) ? 0 : fit[k]
-        const max = Math.max(0, n - shown)
+      const spacer = (key: string, w: number, ht: number) => (ht > 0 ? <Svg key={key} source={svg(w, ht, '')} alt="" width={w} height={ht} /> : null)
+      const listCard = (k: string, head: string, count: string, items: Item[], H: number, w: number, x: number, y: number) => {
+        const bodyH = H - CARD_CHROME
+        const max = fill ? lastStart(items, bodyH) : 0
         const off = Math.min(p.offsets?.[k] ?? 0, max)
-        const isWindowed = !folded(k) && shown > 0 && shown < n
+        const shown: Item[] = []
+        let used = 0
+        for (const it of items.slice(off)) {
+          if (fill && used + it.h > bodyH && shown.length) break
+          shown.push(it)
+          used += it.h
+        }
+        rects.push({ key: k, x, y, w: w + CARD_IN, h: H, max, step: 1 })
         return (
-          <Box key={`h-${k}`} flexDirection="row" gap={2} alignItems="center">
-            <Button key={`fold-${k}`} label={`${folded(k) ? (isRtl() ? '◂' : '▸') : '▾'} ${label} · ${count}`} plain onPress={() => fold(k)} />
-            {isWindowed && <Text dimColor>{`${off + 1}–${off + shown} of ${n}`}</Text>}
-            {isWindowed && off > 0 && <Button key={`up-${k}`} label="▲" plain onPress={() => scrollBy(k, -shown, max)} />}
-            {isWindowed && off < max && <Button key={`dn-${k}`} label="▼" plain onPress={() => scrollBy(k, shown, max)} />}
+          <Box key={`card-${k}`} flexDirection="column" borderStyle="round" borderColor={EDGE} paddingX={1}>
+            <Box key={`card-${k}-head`} flexDirection="row" gap={2} alignItems="center">
+              <Text bold>{head}</Text>
+              {count && <Text dimColor>{count}</Text>}
+            </Box>
+            {shown.map(it => it.node as never)}
+            {fill && spacer(`${k}-pad`, w, bodyH - used)}
           </Box>
         )
       }
-      const shownRun = win('run', running)
-      const shownFin = win('done', finished)
-      const shownPlan = win('plan', planned)
-      const shownTasks = win('tasks', taskRows)
-      const shownBg = win('bg', bgList)
-      const mapMax = Math.max(0, mapFull - mapView)
-      const mapOff = Math.min(p.offsets?.map ?? 0, mapMax)
-      // A cropped map keeps its legend strip (the bottom MAP_LEGEND px) pinned under the window.
-      const MAP_LEGEND = 20
-      const mapCrop = (y: number, h: number) =>
-        `<svg xmlns="http://www.w3.org/2000/svg" width="${mapW}" height="${h}" viewBox="0 ${y} ${mapW} ${h}">${mapSvg(mapW, shownMap, placed, touched, zoom)}</svg>`
-      const card = (key: string, head: string, count: string, body: unknown, tools?: unknown, top = 0) => (
-        <Box key={key} flexDirection="column" borderStyle="round" borderColor={EDGE} paddingX={1} marginTop={top}>
-          <Box key={`${key}-head`} flexDirection="row" gap={2} alignItems="center">
-            <Text bold>{head}</Text>
-            {count && <Text dimColor>{count}</Text>}
-            {tools as never}
-          </Box>
-          {body as never}
-        </Box>
-      )
-      const leftH =
-        (showMain ? MAIN_ROW_H : 0) +
-        ((isEmpty ? 1 : 0) + heads + (isDoneLine ? 1 : 0)) * LINE_H +
-        (shownRun.length + shownFin.length) * 66 +
-        shownPlan.length * 46 +
-        shownTasks.length * LINE_H +
-        shownBg.length * BG_ROW_H +
-        CARD_EXTRA
-      const mapH = mapView
-      // Every row sits in the absolute overlay, so all of them must size the grid or they are clipped.
-      const contentH =
-        headerHeight(title) + (isTwoCol ? Math.max(leftH, rightH) : leftH + rightH) + CARD_EXTRA + LINE_H * (2 + (mapNote ? 1 : 0)) + mapH + 16
-      // shortcut: assumes a desktop row is at least GRID_STEP px, so the grid never overshoots the pane; measure if it falls short.
-      const gridH = Math.max(contentH, (e.props.scroll?.bodyRows || 0) * GRID_STEP)
+      const colX = isTwoCol ? Math.floor(W / 2) : 0
       const left = (
         <Box key="col-crew" flexDirection="column" width={isTwoCol ? '50%' : undefined} flexShrink={0} alignItems={align} paddingRight={isTwoCol ? 1 : 0}>
-          {card(
-            'card-crew',
-            'Agents',
-            `${running.length} running · ${finished.length} done${bgList.length ? ` · ${bgList.length} background` : ''}`,
-            <Box key="crew-body" flexDirection="column">
-          {showMain && <Svg key="main" source={mainRowSvg(colW, mainStep, mainItem, isMainWorking)} alt={`Main session: ${mainStep}`} width={colW} height={MAIN_ROW_H} />}
-          {isEmpty && <Text dimColor>{s.empty}</Text>}
-          {running.length > 0 && head('run', s.running, running.length)}
-          {shownRun.map(a => (
-            <Svg key={a.id} source={agentSvg(colW, a, at)} alt={`${a.description}: ${modelName(a.model)}, ${s.isRunning}`} width={colW} height={66} />
-          ))}
-          {finished.length > 0 && head('done', s.finished, finished.length)}
-          {shownFin.map(a => (
-            <Svg key={a.id} source={agentSvg(colW, a, at)} alt={`${a.description}: ${modelName(a.model)}, ${s.isFinished}`} width={colW} height={66} />
-          ))}
-          {planned.length > 0 && head('plan', s.planned, planned.length)}
-          {shownPlan.map(pl => (
-            <Svg key={`plan-${pl.n}`} source={plannedSvg(colW, pl)} alt={`${pl.n}. ${pl.title}: ${s.isPlanned}`} width={colW} height={46} />
-          ))}
-          {taskList.length > 0 && head('tasks', 'Tasks', isTasksDone ? 0 : taskList.length, `${tasksDone}/${taskList.length}`)}
-          {isDoneLine ? (
-            <Text key="tasks-done">
-              <Text color={DONE}>✓</Text> <Text dimColor>all {taskList.length} done</Text>
-            </Text>
-          ) : (
-            shownTasks
-          )}
-          {bgList.length > 0 && head('bg', 'Background', bgList.length)}
-          {shownBg.map(t => (
-            <Svg key={`bg-${t.id}`} source={bgRowSvg(colW, t, nowAt)} alt={`${t.kind}: ${t.label}, ${t.status}`} width={colW} height={BG_ROW_H} />
-          ))}
-            </Box>,
-          )}
+          {listCard('crew', 'Agents', `${running.length} running · ${finished.length} done${bgList.length ? ` · ${bgList.length} background` : ''}`, crewItems, crewH, colW, isRtl() && isTwoCol ? colX : 0, headerH)}
         </Box>
       )
       const right = (
         <Box key="col-kit" flexDirection="column" width={isTwoCol ? '50%' : undefined} flexShrink={0} alignItems={align} paddingLeft={isTwoCol ? 1 : 0}>
-          {card(
-            'card-kit',
-            'Skills & plugins',
-            `${kitActive} active · ${kitIdle.length} idle`,
-            <Box key="kit-body" flexDirection="column">
-          {kitRows.length === 0 && <Text dimColor>No skills or plugins seen yet.</Text>}
-          {kitShown.map(r => (
-            <Svg key={`kit-${r.name}`} source={kitRowSvg(colW, r, list, nowAt)} alt={`${r.kind} ${r.name}: ${r.state}`} width={colW} height={SKILL_ROW_H} />
-          ))}
-          {kitMore > 0 && <Text dimColor>+{kitMore} more used earlier</Text>}
-          {kitIdle.length > 0 && (
-            <Svg key="kit-idle" source={kitIdleSvg(colW, kitIdle)} alt={`Enabled, not used: ${kitIdle.map(k => k.name).join(', ')}`} width={colW} height={kitIdleHeight(kitIdle.length)} />
-          )}
-            </Box>,
-          )}
+          {listCard('kit', 'Skills & plugins', `${kitActive} active · ${kitIdle.length} idle`, kitItems, kitH, colW, isTwoCol ? (isRtl() ? 0 : colX) : 0, isTwoCol ? headerH : headerH + crewH)}
         </Box>
       )
+
+      // The map card: tools on top, the map below in a window that scrolls by px, its legend pinned under it.
+      const mapY = headerH + row2H + MAP_TOP
+      const mapView = folded('map') ? 0 : Math.max(0, Math.min(mapFull, mapCardH - CARD_CHROME - mapHeadH))
+      const mapMax = Math.max(0, mapFull - mapView)
+      const mapOff = Math.min(p.offsets?.map ?? 0, mapMax)
+      rects.push({ key: 'map', x: 0, y: mapY, w: W, h: mapCardH, max: mapMax, step: MAP_STEP })
+      cardRects = rects
+      // A cropped map keeps its legend strip (the bottom MAP_LEGEND px) pinned under the window.
+      const MAP_LEGEND = 20
+      const mapCrop = (y: number, ht: number) =>
+        `<svg xmlns="http://www.w3.org/2000/svg" width="${mapW}" height="${ht}" viewBox="0 ${y} ${mapW} ${ht}">${mapSvg(mapW, shownMap, placed, touched, zoom)}</svg>`
+      const mapAlt = `Project map: ${mapCards} communities, zoom ${zoom}, ${crewList.length} working`
+      const mapCard = (
+        <Box key="card-map" flexDirection="column" borderStyle="round" borderColor={EDGE} paddingX={1} marginTop={1}>
+          <Box key="card-map-head" flexDirection="row" gap={2} alignItems="center">
+            <Text bold>Map</Text>
+            {project.map && <Text dimColor>{`${shownMap.total} communities · graphify`}</Text>}
+          </Box>
+          {mapNote && <Text dimColor>{mapNote}</Text>}
+          <Box key="map-row" flexDirection="row" gap={3}>
+            <Button key="fold-map" label={folded('map') ? `${isRtl() ? '◂' : '▸'} Show map` : '▾ Hide map'} plain onPress={() => fold('map')} />
+            {mapButton}
+            {toggleCompact}
+          </Box>
+          {mapCards > 0 && mapView > 0 && mapView >= mapFull && <Svg key="map" source={mapSvg(mapW, shownMap, placed, touched, zoom)} alt={mapAlt} width={mapW} height={mapFull} />}
+          {mapCards > 0 && mapView > MAP_LEGEND && mapView < mapFull && (
+            <Box key="map-crop" flexDirection="column">
+              <Svg key="map" source={mapCrop(mapOff, mapView - MAP_LEGEND)} alt={mapAlt} width={mapW} height={mapView - MAP_LEGEND} />
+              <Svg key="map-legend" source={mapCrop(mapFull - MAP_LEGEND, MAP_LEGEND)} alt="Map legend" width={mapW} height={MAP_LEGEND} />
+            </Box>
+          )}
+          {fill && spacer('map-pad', mapW, mapCardH - CARD_CHROME - mapHeadH - mapView)}
+        </Box>
+      )
+      // Every row sits in the absolute overlay, so all of them must size the grid or they are clipped.
+      const contentH = headerH + row2H + MAP_TOP + mapCardH + 8
+      const gridH = Math.max(contentH, paneH)
       return (
         <Box flexDirection="column">
           {/* The grid sizes the pane; the content is placed over it, as an
@@ -2167,51 +2191,14 @@ export const register: Register = (on, options) => {
           ))}
           <Box flexDirection="column" position="absolute" top={0} left={0} right={0} alignItems={align}>
             {/* Row 1: cost, tokens and time. */}
-            <Svg source={headerSvg(W, title, t)} alt={title ? `${title}: ${summary}` : summary} width={W} height={headerHeight(title)} />
+            <Svg source={headerSvg(W, title, t)} alt={title ? `${title}: ${summary}` : summary} width={W} height={headerH} />
             {/* Row 2: the crew beside the skills and plugins. */}
             <Box flexDirection={isTwoCol ? (isRtl() ? 'row-reverse' : 'row') : 'column'}>
               {left}
               {right}
             </Box>
             {/* Row 3: the project map. */}
-            {card(
-              'card-map',
-              'Map',
-              project.map ? `${shownMap.total} communities · graphify` : '',
-              <Box key="map-body" flexDirection="column">
-                {mapNote && <Text dimColor>{mapNote}</Text>}
-                <Box key="map-row" flexDirection="row" gap={3}>
-                  <Button key="fold-map" label={folded('map') ? `${isRtl() ? '◂' : '▸'} Show map` : '▾ Hide map'} plain onPress={() => fold('map')} />
-                  {mapButton}
-                  {mapView > 0 && mapOff > 0 && <Button key="up-map" label="▲" plain onPress={() => scrollBy('map', -Math.floor(mapView / 2), mapMax)} />}
-                  {mapView > 0 && mapOff + mapView < mapFull && <Button key="dn-map" label="▼" plain onPress={() => scrollBy('map', Math.floor(mapView / 2), mapMax)} />}
-                  {toggleCompact}
-                </Box>
-                {mapCards > 0 && mapView > 0 && mapView >= mapFull && (
-                  <Svg
-                    key="map"
-                    source={mapSvg(mapW, shownMap, placed, touched, zoom)}
-                    alt={`Project map: ${mapCards} communities, zoom ${zoom}, ${crewList.length} working`}
-                    width={mapW}
-                    height={mapH}
-                  />
-                )}
-                {mapCards > 0 && mapView > 0 && mapView < mapFull && (
-                  <Box key="map-crop" flexDirection="column">
-                    <Svg
-                      key="map"
-                      source={mapCrop(mapOff, mapView - MAP_LEGEND)}
-                      alt={`Project map: ${mapCards} communities, zoom ${zoom}, ${crewList.length} working`}
-                      width={mapW}
-                      height={mapView - MAP_LEGEND}
-                    />
-                    <Svg key="map-legend" source={mapCrop(mapFull - MAP_LEGEND, MAP_LEGEND)} alt="Map legend" width={mapW} height={MAP_LEGEND} />
-                  </Box>
-                )}
-              </Box>,
-              undefined,
-              1,
-            )}
+            {mapCard}
           </Box>
         </Box>
       )
