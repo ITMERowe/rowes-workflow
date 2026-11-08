@@ -593,9 +593,8 @@ const gridSvg = (W: number, H: number) => `<svg xmlns="http://www.w3.org/2000/sv
 <rect width="${W}" height="${H}" fill="url(#g)"/>
 </svg>`
 
-const RULE_H = 14
-const ruleSvg = (W: number): string =>
-  `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${RULE_H}" viewBox="0 0 ${W} ${RULE_H}"><style>.ln{stroke:#e4e4e1}@media (prefers-color-scheme: dark){.ln{stroke:#333331}}</style><line class="ln" x1="0" y1="${RULE_H / 2}" x2="${W}" y2="${RULE_H / 2}" stroke-width="1"/></svg>`
+// The border of the panel's section cards.
+const EDGE = '#3d3d3a'
 
 const PANE_CSS = `<style>
 .t{fill:#1f1f1f}.s{fill:#6b6b68}.m{fill:#9a9a96}.k{fill:#ecebe8}.ln{stroke:#e4e4e1}.tile{fill:#f4f3f0}
@@ -2006,23 +2005,43 @@ export const register: Register = (on, options) => {
       // Row 2 is two columns once the pane is wide enough: the crew (main session, subagents,
       // tasks, background) on the left, skills and plugins on the right.
       const isTwoCol = W >= 560
-      const colW = isTwoCol ? Math.floor(W / 2) - 18 : W
+      // Each section is a bordered card with a header; rows inside are inset by its border and padding.
+      const CARD_IN = 24
+      const CARD_EXTRA = LINE_H * 2 + 8
+      const colW = (isTwoCol ? Math.floor(W / 2) - 18 : W) - CARD_IN
+      const mapW = W - CARD_IN
+      const card = (key: string, head: string, count: string, body: unknown, tools?: unknown, top = 0) => (
+        <Box key={key} flexDirection="column" borderStyle="round" borderColor={EDGE} paddingX={1} marginTop={top}>
+          <Box key={`${key}-head`} flexDirection="row" gap={2} alignItems="center">
+            <Text bold>{head}</Text>
+            {count && <Text dimColor>{count}</Text>}
+            {tools as never}
+          </Box>
+          {body as never}
+        </Box>
+      )
       const leftH =
         (showMain ? MAIN_ROW_H : 0) +
         ((isEmpty ? 1 : 0) + (running.length > 0 ? 1 : 0) + (finished.length > 0 ? 1 : 0) + (planned.length > 0 ? 1 : 0)) * LINE_H +
         (running.length + shownDone) * 66 +
         planned.length * 46 +
         (taskList.length > 0 ? (isTasksDone ? 1 : 1 + taskList.length) : 0) * LINE_H +
-        (bgList.length > 0 ? LINE_H + bgList.length * BG_ROW_H : 0)
-      const rightH = LINE_H + kitShown.length * SKILL_ROW_H + (kitMore > 0 ? LINE_H : 0) + kitIdleHeight(kitIdle.length) + (kitRows.length ? 0 : LINE_H)
-      const mapH = mapCards > 0 ? mapLayout(W, shownMap, placed.has(OFF_CODE), zoom).H : 0
+        (bgList.length > 0 ? LINE_H + bgList.length * BG_ROW_H : 0) +
+        CARD_EXTRA
+      const rightH = LINE_H + kitShown.length * SKILL_ROW_H + (kitMore > 0 ? LINE_H : 0) + kitIdleHeight(kitIdle.length) + (kitRows.length ? 0 : LINE_H) + CARD_EXTRA
+      const mapH = mapCards > 0 ? mapLayout(mapW, shownMap, placed.has(OFF_CODE), zoom).H : 0
       // Every row sits in the absolute overlay, so all of them must size the grid or they are clipped.
       const contentH =
-        headerHeight(title) + (isTwoCol ? Math.max(leftH, rightH) : leftH + rightH) + RULE_H + LINE_H * (2 + (mapNote ? 1 : 0)) + mapH + 8
+        headerHeight(title) + (isTwoCol ? Math.max(leftH, rightH) : leftH + rightH) + CARD_EXTRA + LINE_H * (2 + (mapNote ? 1 : 0)) + mapH + 16
       // shortcut: assumes a desktop row is at least GRID_STEP px, so the grid never overshoots the pane; measure if it falls short.
       const gridH = Math.max(contentH, (e.props.scroll?.bodyRows || 0) * GRID_STEP)
       const left = (
-        <Box key="col-crew" flexDirection="column" width={isTwoCol ? '50%' : undefined} flexShrink={0} alignItems={align}>
+        <Box key="col-crew" flexDirection="column" width={isTwoCol ? '50%' : undefined} flexShrink={0} alignItems={align} paddingRight={isTwoCol ? 1 : 0}>
+          {card(
+            'card-crew',
+            'Agents',
+            `${running.length} running · ${finished.length} done${bgList.length ? ` · ${bgList.length} background` : ''}`,
+            <Box key="crew-body" flexDirection="column">
           {showMain && <Svg key="main" source={mainRowSvg(colW, mainStep, mainItem, isMainWorking)} alt={`Main session: ${mainStep}`} width={colW} height={MAIN_ROW_H} />}
           {isEmpty && <Text dimColor>{s.empty}</Text>}
           {running.length > 0 && section('h-run', `${s.running} · ${running.length}`)}
@@ -2050,11 +2069,17 @@ export const register: Register = (on, options) => {
           {bgList.map(t => (
             <Svg key={`bg-${t.id}`} source={bgRowSvg(colW, t, nowAt)} alt={`${t.kind}: ${t.label}, ${t.status}`} width={colW} height={BG_ROW_H} />
           ))}
+            </Box>,
+          )}
         </Box>
       )
       const right = (
         <Box key="col-kit" flexDirection="column" width={isTwoCol ? '50%' : undefined} flexShrink={0} alignItems={align} paddingLeft={isTwoCol ? 1 : 0}>
-          {section('h-kit', `Skills & plugins · ${kitActive} active · ${kitIdle.length} idle`)}
+          {card(
+            'card-kit',
+            'Skills & plugins',
+            `${kitActive} active · ${kitIdle.length} idle`,
+            <Box key="kit-body" flexDirection="column">
           {kitRows.length === 0 && <Text dimColor>No skills or plugins seen yet.</Text>}
           {kitShown.map(r => (
             <Svg key={`kit-${r.name}`} source={kitRowSvg(colW, r, list, nowAt)} alt={`${r.kind} ${r.name}: ${r.state}`} width={colW} height={SKILL_ROW_H} />
@@ -2062,6 +2087,8 @@ export const register: Register = (on, options) => {
           {kitMore > 0 && <Text dimColor>+{kitMore} more used earlier</Text>}
           {kitIdle.length > 0 && (
             <Svg key="kit-idle" source={kitIdleSvg(colW, kitIdle)} alt={`Enabled, not used: ${kitIdle.map(k => k.name).join(', ')}`} width={colW} height={kitIdleHeight(kitIdle.length)} />
+          )}
+            </Box>,
           )}
         </Box>
       )
@@ -2080,22 +2107,29 @@ export const register: Register = (on, options) => {
               {left}
               {right}
             </Box>
-            {/* Row 3: the project map, under a hairline. */}
-            <Svg key="rule" source={ruleSvg(W)} alt="" width={W} height={RULE_H} />
-            {section('h-map', project.map ? `Map · ${shownMap.total} communities from graphify` : 'Map')}
-            {mapNote && <Text dimColor>{mapNote}</Text>}
-            <Box key="map-row" flexDirection="row" gap={3}>
-              {mapButton}
-              {toggleCompact}
-            </Box>
-            {mapCards > 0 && (
-              <Svg
-                key="map"
-                source={mapSvg(W, shownMap, placed, touched, zoom)}
-                alt={`Project map: ${mapCards} communities, zoom ${zoom}, ${crewList.length} working`}
-                width={W}
-                height={mapH}
-              />
+            {/* Row 3: the project map. */}
+            {card(
+              'card-map',
+              'Map',
+              project.map ? `${shownMap.total} communities · graphify` : '',
+              <Box key="map-body" flexDirection="column">
+                {mapNote && <Text dimColor>{mapNote}</Text>}
+                <Box key="map-row" flexDirection="row" gap={3}>
+                  {mapButton}
+                  {toggleCompact}
+                </Box>
+                {mapCards > 0 && (
+                  <Svg
+                    key="map"
+                    source={mapSvg(mapW, shownMap, placed, touched, zoom)}
+                    alt={`Project map: ${mapCards} communities, zoom ${zoom}, ${crewList.length} working`}
+                    width={mapW}
+                    height={mapH}
+                  />
+                )}
+              </Box>,
+              undefined,
+              1,
             )}
           </Box>
         </Box>
