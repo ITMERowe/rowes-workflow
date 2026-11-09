@@ -31,3 +31,19 @@ test('desktop: a task row with tool calls lists them when its toggle is pressed'
   expect((await ui.find({ key: 'calls-task-0' }))?.props.label).toBe('▾ 1')
   expect(await ui.find({ type: 'Text', text: /hooks\/register\.tsx/ })).toBeTruthy()
 })
+
+test('desktop: the cost and tokens tiles reveal their breakdown on hover, with no interactive frame', async ($, on) => {
+  mock.clock(on)
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  const ui = await $.ui.mount({ plugin: 'savvy-progress', surface: 'desktop', component: 'Pane', requestId: 'savvy-agents', props: pane })
+  // No Svg runs in a frame: a frame reloads, and flickers, on every redraw.
+  expect((await ui.findAll({ type: 'Svg' })).some(el => el.props.isInteractive)).toBe(false)
+  for (const key of ['tip-0', 'tip-1']) {
+    const tip = await ui.find({ key })
+    expect(tip).toBeTruthy()
+    const card = (tip?.children ?? [])[0] as { props: Record<string, unknown>; hover?: unknown } | undefined
+    expect(card?.props.display).toBe('none')
+    expect(card?.hover ?? card?.props.hover).toEqual({ display: 'flex' })
+  }
+  expect(await ui.find({ type: 'Text', text: /summed over every model request/ })).toBeTruthy()
+})

@@ -866,7 +866,7 @@ const svg = (W: number, H: number, body: string): string =>
 
 // The pane's own title already says "Agents": the header names the flow, if any.
 // Hover text for the cost and tokens tiles: where the figure comes from, main session by token
-// kind, then each subagent. Plain lines; the SVG's <title> shows them as a tooltip.
+// kind, then each subagent. Plain lines, shown in a card when the pointer is over the tile.
 const TIP_AGENTS = 5
 
 const kindLines = (s: Split, by: 'usd' | 'tokens'): string[] => {
@@ -910,14 +910,32 @@ export const tokensTip = (tokens: number, s: Split, list: readonly AgentRun[]): 
   ].join('\n')
 }
 
-const headerSvg = (W: number, title: string, t: ReturnType<typeof totals>, tips: readonly string[] = []): string => {
+// The header's tiles: three across, 8px apart, 46px tall, under the flow's title when there is one.
+const TILE_GAP = 8
+const TILE_H = 46
+const tileTop = (title: string): number => (title ? 28 : 0)
+
+// Tile `i` in the pane's cells, for the Box laid over it: a desktop column is 8px, a row ROW_PX.
+export const tileBox = (W: number, title: string, i: number) => {
+  const tw = (W - TILE_GAP * 2) / 3
+  const left = Math.floor(mx(W, i * (tw + TILE_GAP), tw) / 8)
+  return {
+    top: Math.floor(tileTop(title) / ROW_PX),
+    left,
+    width: Math.floor(tw / 8),
+    height: Math.ceil(TILE_H / ROW_PX),
+    cols: Math.floor(W / 8),
+  }
+}
+
+const headerSvg = (W: number, title: string, t: ReturnType<typeof totals>): string => {
   const s = tr()
-  const gap = 8
+  const gap = TILE_GAP
   const tw = (W - gap * 2) / 3
-  const top = title ? 28 : 0
+  const top = tileTop(title)
   const isZero = (v: string) => /^≈?\$?0(\.00)?$|^0:00$/.test(v)
   const tile = (i: number, k: string, v: string) =>
-    `<g>${tips[i] ? `<title>${xml(tips[i])}</title>` : ''}<rect class="tile ln" x="${mx(W, i * (tw + gap), tw)}" y="${top + 0.5}" width="${tw}" height="46" rx="10" stroke-width="1"/>
+    `<g><rect class="tile ln" x="${mx(W, i * (tw + gap), tw)}" y="${top + 0.5}" width="${tw}" height="46" rx="10" stroke-width="1"/>
 <text class="s" ${startText(W, i * (tw + gap) + 12, top + 17)} font-family="${FONT}" font-size="11" letter-spacing=".4">${k.toUpperCase()}</text>
 <text class="${isZero(v) ? 'm' : 't'}" ${startText(W, i * (tw + gap) + 12, top + 38, false)} font-family="${FONT}" font-size="18" font-weight="600" font-variant-numeric="tabular-nums">${isZero(v) ? '—' : v}</text></g>`
   return svg(
@@ -1830,10 +1848,9 @@ export const register: Register = (on, options) => {
       const isTwoCol = W >= 560
       // Each section is a bordered card with a header; rows inside are inset by its border and padding.
       const CARD_IN = 24
-      // A card's header row, its top and bottom border, and its inner top and bottom padding.
+      // A card's header row, its top and bottom border, its inner top and bottom padding, and its one-row bottom margin.
       const CARD_PAD = 8
-      const CARD_GAP = 8
-      const CARD_CHROME = LINE_H + 12 + CARD_PAD * 2
+      const CARD_CHROME = LINE_H + 12 + CARD_PAD * 2 + ROW_PX
       const colW = (isTwoCol ? Math.floor(W / 2) - 18 : W) - CARD_IN
 
       // A section header hides or shows all of its rows; each card scrolls on its own under the wheel.
@@ -1947,15 +1964,12 @@ export const register: Register = (on, options) => {
       const TOOLS_H = LINE_H + 8
       const crewNat = CARD_CHROME + sum(crewItems)
       const kitNat = CARD_CHROME + sum(kitItems)
-      // Stacked in one column, the cards keep this gap between them.
-      const gapH = isTwoCol ? 0 : CARD_GAP
-      const row2Nat = isTwoCol ? Math.max(crewNat, kitNat) : crewNat + gapH + kitNat
+      const row2Nat = isTwoCol ? Math.max(crewNat, kitNat) : crewNat + kitNat
       const avail = paneH - headerH - TOOLS_H - 8
       const fill = paneH > 0 && avail > 200
       const row2H = fill ? avail : row2Nat
-      const stackH = row2H - gapH
-      const crewH = !fill ? crewNat : isTwoCol ? row2H : Math.min(crewNat, Math.max(Math.floor(stackH * 0.6), stackH - kitNat))
-      const kitH = !fill ? kitNat : isTwoCol ? row2H : stackH - crewH
+      const crewH = !fill ? crewNat : isTwoCol ? row2H : Math.min(crewNat, Math.max(Math.floor(row2H * 0.6), row2H - kitNat))
+      const kitH = !fill ? kitNat : isTwoCol ? row2H : row2H - crewH
 
       // Where each card sits, in pane px, so a wheel tick over a card scrolls that card (the ui.scroll hook reads it).
       const rects: CardRect[] = []
@@ -1982,7 +1996,7 @@ export const register: Register = (on, options) => {
         }
         rects.push({ key: k, x, y, w: w + CARD_IN, h: H, max, step: 1 })
         return (
-          <Box key={`card-${k}`} flexDirection="column" borderStyle="round" borderColor={EDGE} paddingX={1}>
+          <Box key={`card-${k}`} flexDirection="column" borderStyle="round" borderColor={EDGE} paddingX={1} marginBottom={1}>
             {spacer(`${k}-top`, w, CARD_PAD)}
             <Box key={`card-${k}-head`} flexDirection="row" gap={2} alignItems="center">
               <Text bold>{head}</Text>
@@ -2002,7 +2016,7 @@ export const register: Register = (on, options) => {
       )
       const right = (
         <Box key="col-kit" flexDirection="column" width={isTwoCol ? '50%' : undefined} flexShrink={0} alignItems={align} paddingLeft={isTwoCol ? 1 : 0}>
-          {listCard('kit', 'Skills & plugins', `${kitActive} active · ${kitIdle.length} idle`, kitItems, kitH, colW, isTwoCol ? (isRtl() ? 0 : colX) : 0, isTwoCol ? headerH : headerH + crewH + gapH)}
+          {listCard('kit', 'Skills & plugins', `${kitActive} active · ${kitIdle.length} idle`, kitItems, kitH, colW, isTwoCol ? (isRtl() ? 0 : colX) : 0, isTwoCol ? headerH : headerH + crewH)}
         </Box>
       )
 
@@ -2023,23 +2037,46 @@ export const register: Register = (on, options) => {
           ))}
           <Box flexDirection="column" position="absolute" top={paneParked ? 1 : 0} left={0} right={0} alignItems={align}>
             {/* Row 1: cost, tokens and time. */}
-            <Svg
-              source={headerSvg(W, title, t, [costTip(t.cost, usage?.cost?.usd, split, list), tokensTip(t.tokens, split, list)])}
-              alt={title ? `${title}: ${summary}` : summary}
-              width={W}
-              height={headerH}
-              isInteractive
-            />
+            <Svg source={headerSvg(W, title, t)} alt={title ? `${title}: ${summary}` : summary} width={W} height={headerH} />
             {/* Row 2: the crew beside the skills and plugins. */}
             <Box flexDirection={isTwoCol ? (isRtl() ? 'row-reverse' : 'row') : 'column'}>
               {left}
-              {spacer('card-gap', W, gapH)}
               {right}
             </Box>
             {/* Row 3: tools. */}
             <Box key="tools-row" flexDirection="row" gap={3} marginTop={1}>
               {toggleCompact}
             </Box>
+            {/* Tooltips last, so they paint over the cards. A keyed Box over each tile is the hover
+                scope; its card shows on hover. An image, not an interactive SVG frame: a frame
+                reloads, and flickers, on every redraw. */}
+            {[costTip(t.cost, usage?.cost?.usd, split, list), tokensTip(t.tokens, split, list)].map((tip, i) => {
+              const tile = tileBox(W, title, i)
+              const cardW = Math.min(52, tile.cols)
+              return (
+                <Box key={`tip-${i}`} position="absolute" top={tile.top} left={tile.left} width={tile.width} height={tile.height}>
+                  <Box
+                    position="absolute"
+                    top={tile.height}
+                    left={Math.min(0, tile.cols - tile.left - cardW)}
+                    width={cardW}
+                    display="none"
+                    hover={{ display: 'flex' }}
+                    flexDirection="column"
+                    borderStyle="round"
+                    borderColor={EDGE}
+                    backgroundColor="inverseText"
+                    paddingX={1}
+                  >
+                    {tip.split('\n').map((line, j) => (
+                      <Text key={`tip-${i}-${j}`} dimColor={j > 0} bold={j === 0}>
+                        {line || ' '}
+                      </Text>
+                    ))}
+                  </Box>
+                </Box>
+              )
+            })}
           </Box>
         </Box>
       )
