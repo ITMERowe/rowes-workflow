@@ -103,6 +103,8 @@ declare module 'claude-code' {
       /** Plugins whose SessionStart hook added context: on for the whole session. */
       modes: string[]
       mainIdleAt: number
+      /** Tokens the main session's own model requests used, summed. */
+      mainTokens: number
       panel: Panel
       now: number
     }

@@ -19,6 +19,7 @@ const kit = atom({ plugin: 'savvy-progress', key: 'kit' } as const, [])
 const modes = atom({ plugin: 'savvy-progress', key: 'modes' } as const, [])
 // When the main session's last turn ended: its work before then is no longer live.
 const mainIdleAt = atom({ plugin: 'savvy-progress', key: 'mainIdleAt' } as const, 0)
+const mainTokens = atom({ plugin: 'savvy-progress', key: 'mainTokens' } as const, 0)
 // ribbon's plan windows, for the band's USAGE row.
 const windows = atom({ plugin: 'ribbon', key: 'windows' } as const, [])
 type UsageWindow = { kind: string; percentUsed: number; resetsAt?: string }
@@ -589,12 +590,17 @@ const plannedOf = (f: Flow | null, list: AgentRun[]): Planned[] => {
   return (f.tasks ?? []).map((t, i) => ({ ...t, n: i + 1 })).filter(t => !started.has(norm(t.title)))
 }
 
-const totals = (list: AgentRun[], at: number) => {
-  const cost = list.reduce((s, a) => s + a.costUsd, 0)
-  const tokens = list.reduce((s, a) => s + a.tokens, 0)
-  const start = Math.min(...list.map(a => a.startedAt))
-  const end = Math.max(...list.map(a => a.endedAt ?? Math.max(at, a.startedAt)))
-  return { cost, tokens, time: list.length ? end - start : 0 }
+// The whole session: the main session's own figures (what the engine reports as its cost and
+// start, the tokens summed here) plus the subagents. With no session figures, the subagents alone.
+export type SessionFigures = { costUsd?: number; startedAt?: number; tokens?: number }
+export const totals = (list: AgentRun[], at: number, session: SessionFigures = {}) => {
+  const subCost = list.reduce((s, a) => s + a.costUsd, 0)
+  const tokens = list.reduce((s, a) => s + a.tokens, 0) + (session.tokens ?? 0)
+  const start = Math.min(...list.map(a => a.startedAt), session.startedAt || Infinity)
+  // The session runs until now; subagents alone stop the clock when the last one ends.
+  const end = Math.max(session.startedAt ? at : -Infinity, ...list.map(a => a.endedAt ?? Math.max(at, a.startedAt)))
+  // The engine's session cost already holds the subagents; it can lag a step behind this plugin's own sum.
+  return { cost: Math.max(session.costUsd ?? 0, subCost), tokens, time: Number.isFinite(start) ? Math.max(0, end - start) : 0 }
 }
 
 // --- desktop drawings: each row is one SVG, as the band above the prompt is.
@@ -1510,7 +1516,12 @@ export const register: Register = (on, options) => {
     const result = yield* next(e)
     const agentId = e.agentId
     const usage = result.usage
-    if (!agentId || !usage) return result
+    if (!usage) return result
+    const sum = (usage.input_tokens || 0) + (usage.output_tokens || 0) + (usage.cache_read_input_tokens || 0) + (usage.cache_creation_input_tokens || 0)
+    if (!agentId) {
+      await update($, mainTokens, n => n + sum)
+      return result
+    }
 
     const model = usage.model || e.model
     await update($, agents, list =>
@@ -1653,7 +1664,8 @@ export const register: Register = (on, options) => {
     const running = list.filter(a => a.status === 'running').reverse()
     const finished = list.filter(a => a.status !== 'running').reverse()
     const planned = plannedOf(f, list)
-    const t = totals(list, at)
+    const usage = await $.session.usage().catch(() => null)
+    const t = totals(list, at, { costUsd: usage?.cost?.usd, startedAt: usage?.startedAt, tokens: await read($, mainTokens) })
     // The pane's title says "Agents"; inside, only the flow's own name.
     const title = f && !f.isFinished ? f.title : ''
 

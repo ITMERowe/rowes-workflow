@@ -1,6 +1,7 @@
 import type { On } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
+import { totals } from './register'
 
 const PLUGIN = 'savvy-progress'
 const pane = { title: '', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} } as const
@@ -81,3 +82,13 @@ for (const [model, percent] of [['claude-haiku-5-5', 13], ['claude-haiku-4-5', 6
     expect(await shows($, new RegExp(`ctx ${percent}%`))).toBeDefined()
   })
 }
+
+test('the header counts the main session too, not only subagents', () => {
+  const a = { id: 't1', agentId: 'a1', type: 'editor', description: 'x', model: 'claude-sonnet-5-5', status: 'done' as const, startedAt: 5_000, endedAt: 6_000, contextTokens: 0, contextMax: 1, tokens: 100, costUsd: 0.5, steps: 1, round: 1 }
+  // No subagents: the session's own cost, tokens and time.
+  expect(totals([], 10_000, { costUsd: 1.25, startedAt: 4_000, tokens: 900 })).toEqual({ cost: 1.25, tokens: 900, time: 6_000 })
+  // With one: tokens add up, cost is the session's (it holds the subagent's), time runs from the session's start.
+  expect(totals([a], 10_000, { costUsd: 2, startedAt: 4_000, tokens: 900 })).toEqual({ cost: 2, tokens: 1000, time: 6_000 })
+  // No session figures: the subagents alone, as before.
+  expect(totals([a], 10_000)).toEqual({ cost: 0.5, tokens: 100, time: 1_000 })
+})
