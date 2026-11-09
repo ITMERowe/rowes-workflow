@@ -1832,6 +1832,7 @@ export const register: Register = (on, options) => {
       const CARD_IN = 24
       // A card's header row, its top and bottom border, and its inner top and bottom padding.
       const CARD_PAD = 8
+      const CARD_GAP = 8
       const CARD_CHROME = LINE_H + 12 + CARD_PAD * 2
       const colW = (isTwoCol ? Math.floor(W / 2) - 18 : W) - CARD_IN
 
@@ -1946,12 +1947,15 @@ export const register: Register = (on, options) => {
       const TOOLS_H = LINE_H + 8
       const crewNat = CARD_CHROME + sum(crewItems)
       const kitNat = CARD_CHROME + sum(kitItems)
-      const row2Nat = isTwoCol ? Math.max(crewNat, kitNat) : crewNat + kitNat
+      // Stacked in one column, the cards keep this gap between them.
+      const gapH = isTwoCol ? 0 : CARD_GAP
+      const row2Nat = isTwoCol ? Math.max(crewNat, kitNat) : crewNat + gapH + kitNat
       const avail = paneH - headerH - TOOLS_H - 8
       const fill = paneH > 0 && avail > 200
       const row2H = fill ? avail : row2Nat
-      const crewH = !fill ? crewNat : isTwoCol ? row2H : Math.min(crewNat, Math.max(Math.floor(row2H * 0.6), row2H - kitNat))
-      const kitH = !fill ? kitNat : isTwoCol ? row2H : row2H - crewH
+      const stackH = row2H - gapH
+      const crewH = !fill ? crewNat : isTwoCol ? row2H : Math.min(crewNat, Math.max(Math.floor(stackH * 0.6), stackH - kitNat))
+      const kitH = !fill ? kitNat : isTwoCol ? row2H : stackH - crewH
 
       // Where each card sits, in pane px, so a wheel tick over a card scrolls that card (the ui.scroll hook reads it).
       const rects: CardRect[] = []
@@ -1998,7 +2002,7 @@ export const register: Register = (on, options) => {
       )
       const right = (
         <Box key="col-kit" flexDirection="column" width={isTwoCol ? '50%' : undefined} flexShrink={0} alignItems={align} paddingLeft={isTwoCol ? 1 : 0}>
-          {listCard('kit', 'Skills & plugins', `${kitActive} active · ${kitIdle.length} idle`, kitItems, kitH, colW, isTwoCol ? (isRtl() ? 0 : colX) : 0, isTwoCol ? headerH : headerH + crewH)}
+          {listCard('kit', 'Skills & plugins', `${kitActive} active · ${kitIdle.length} idle`, kitItems, kitH, colW, isTwoCol ? (isRtl() ? 0 : colX) : 0, isTwoCol ? headerH : headerH + crewH + gapH)}
         </Box>
       )
 
@@ -2029,6 +2033,7 @@ export const register: Register = (on, options) => {
             {/* Row 2: the crew beside the skills and plugins. */}
             <Box flexDirection={isTwoCol ? (isRtl() ? 'row-reverse' : 'row') : 'column'}>
               {left}
+              {spacer('card-gap', W, gapH)}
               {right}
             </Box>
             {/* Row 3: tools. */}
