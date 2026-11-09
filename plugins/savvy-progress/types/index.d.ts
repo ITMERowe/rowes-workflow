@@ -16,6 +16,12 @@ export type Flow = {
   tasks: PlannedTask[]
 }
 
+/** Input, output, cache read, cache write: the order the price table uses. */
+export type Quad = [number, number, number, number]
+
+/** Model requests summed by token kind, with the estimated cost of each kind. */
+export type Split = { requests: number; tokens: Quad; usd: Quad }
+
 export type AgentStatus = 'running' | 'done' | 'failed'
 
 export type AgentRun = {
@@ -48,12 +54,20 @@ export type Panel = {
   /** Each section's own scroll: the first item it shows. */
   offsets?: Record<string, number>
   autoOpenedFor: string
+  /** Rows whose tool-call list is shown, by row key. */
+  openRows?: string[]
 }
 
 export type TaskStatus = 'pending' | 'in_progress' | 'completed'
 
 /** One step of the app's task list (update_plan). */
-export type Task = { content: string; status: TaskStatus }
+export type Task = {
+  content: string
+  status: TaskStatus
+  /** When it first went in progress, and when it completed: the window its main-session tool calls fall in. */
+  startedAt?: number
+  endedAt?: number
+}
 
 export type WorkKind = 'read' | 'edit' | 'cli' | 'search' | 'web'
 
@@ -103,8 +117,8 @@ declare module 'claude-code' {
       /** Plugins whose SessionStart hook added context: on for the whole session. */
       modes: string[]
       mainIdleAt: number
-      /** Tokens the main session's own model requests used, summed. */
-      mainTokens: number
+      /** The main session's own model requests, summed by token kind. */
+      mainSplit: Split
       panel: Panel
       now: number
     }

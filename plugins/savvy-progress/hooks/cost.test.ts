@@ -1,7 +1,7 @@
 import type { On } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
-import { totals } from './register'
+import { addRequest, costTip, tokensTip, totals } from './register'
 
 const PLUGIN = 'savvy-progress'
 const pane = { title: '', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} } as const
@@ -91,4 +91,21 @@ test('the header counts the main session too, not only subagents', () => {
   expect(totals([a], 10_000, { costUsd: 2, startedAt: 4_000, tokens: 900 })).toEqual({ cost: 2, tokens: 1000, time: 6_000 })
   // No session figures: the subagents alone, as before.
   expect(totals([a], 10_000)).toEqual({ cost: 0.5, tokens: 100, time: 1_000 })
+})
+
+test('tooltips: main session split by token kind, then subagents', () => {
+  const none = { requests: 0, tokens: [0, 0, 0, 0], usd: [0, 0, 0, 0] } as const
+  // Sonnet 5.5: input 2, output 10, cache read 0.1, cache write 4 USD per million.
+  const s = addRequest({ ...none, tokens: [...none.tokens], usd: [...none.usd] }, 'claude-sonnet-5-5', { input_tokens: 0, output_tokens: 1000, cache_read_input_tokens: 1_000_000, cache_creation_input_tokens: 0 })
+  expect(s.requests).toBe(1)
+  expect(Math.round((s.usd[2] ?? 0) * 1000)).toBe(100)
+  const a = { id: 't1', agentId: 'a1', type: 'editor', description: 'Fix bug', model: 'claude-haiku-5-5', status: 'done' as const, startedAt: 0, contextTokens: 0, contextMax: 1, tokens: 5000, costUsd: 0.02, steps: 1, round: 1 }
+  const cost = costTip(0.13, 0.12, s, [a])
+  expect(cost).toContain('cache reads: 1.0M · ≈$0.10')
+  expect(cost).toContain('Fix bug · Haiku 5.5: ≈$0.02')
+  expect(cost).toContain('$0.12')
+  // Sorted by tokens: cache reads first, output after.
+  const tokens = tokensTip(1_006_000, s, [a])
+  expect(tokens.indexOf('cache reads')).toBeLessThan(tokens.indexOf('output'))
+  expect(tokens).toContain('1 requests')
 })

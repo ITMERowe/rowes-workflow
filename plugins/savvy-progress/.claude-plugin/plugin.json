@@ -1,6 +1,6 @@
 {
   "name": "savvy-progress",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "One band above the prompt (savvy-flow progress and plan usage) and an agents panel (/agents-info): subagents, background tasks, the task list, and the skills and plugins in use.",
   "dependencies": [
     "ponytail@ponytail",

@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { AgentRun, BgTask, Flow, Panel, Phase, PlannedTask, SkillKind, SkillUse, Task, TaskStatus, WorkItem, WorkKind } from '../types'
+import type { AgentRun, BgTask, Flow, Panel, Phase, PlannedTask, Quad, SkillKind, SkillUse, Split, Task, TaskStatus, WorkItem, WorkKind } from '../types'
 
 const flow = atom({ plugin: 'savvy-progress', key: 'flow' } as const, null)
 const agents = atom({ plugin: 'savvy-progress', key: 'agents' } as const, [])
@@ -19,7 +19,8 @@ const kit = atom({ plugin: 'savvy-progress', key: 'kit' } as const, [])
 const modes = atom({ plugin: 'savvy-progress', key: 'modes' } as const, [])
 // When the main session's last turn ended: its work before then is no longer live.
 const mainIdleAt = atom({ plugin: 'savvy-progress', key: 'mainIdleAt' } as const, 0)
-const mainTokens = atom({ plugin: 'savvy-progress', key: 'mainTokens' } as const, 0)
+const NO_SPLIT: Split = { requests: 0, tokens: [0, 0, 0, 0], usd: [0, 0, 0, 0] }
+const mainSplit = atom({ plugin: 'savvy-progress', key: 'mainSplit' } as const, NO_SPLIT)
 // ribbon's plan windows, for the band's USAGE row.
 const windows = atom({ plugin: 'ribbon', key: 'windows' } as const, [])
 type UsageWindow = { kind: string; percentUsed: number; resetsAt?: string }
@@ -115,6 +116,18 @@ const STRINGS = {
     review: 'Review',
     busy: 'running',
     ctx: 'ctx',
+    tipEstimate: 'estimated from token counts and list prices',
+    tipEngine: 'Claude Code total',
+    tipTokens: 'summed over every model request',
+    tipResend: 'Each request sends the whole context again, mostly as cheap cache reads.',
+    mainSession: 'Main session',
+    subagents: 'Subagents',
+    requests: 'requests',
+    input: 'input',
+    output: 'output',
+    cacheRead: 'cache reads',
+    cacheWrite: 'cache writes',
+    more: 'more',
     tier: { light: 'light', medium: 'medium', careful: 'careful', heavy: 'heavy', fable: 'fable', other: 'other' },
     effort: { low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', max: 'max' },
   },
@@ -146,6 +159,18 @@ const STRINGS = {
     review: 'Ревью',
     busy: 'в работе',
     ctx: 'ctx',
+    tipEstimate: 'оценка по числу токенов и прайс-листу',
+    tipEngine: 'итог Claude Code',
+    tipTokens: 'сумма по всем запросам к модели',
+    tipResend: 'Каждый запрос заново отправляет весь контекст, в основном как дешёвое чтение кэша.',
+    mainSession: 'Основная сессия',
+    subagents: 'Субагенты',
+    requests: 'запросов',
+    input: 'ввод',
+    output: 'вывод',
+    cacheRead: 'чтение кэша',
+    cacheWrite: 'запись кэша',
+    more: 'ещё',
     tier: { light: 'light', medium: 'medium', careful: 'careful', heavy: 'heavy', fable: 'fable', other: 'other' },
     effort: { low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', max: 'max' },
   },
@@ -177,6 +202,18 @@ const STRINGS = {
     review: 'בדיקה',
     busy: 'בעבודה',
     ctx: 'הקשר',
+    tipEstimate: 'הערכה לפי ספירת טוקנים ומחירון',
+    tipEngine: 'סה״כ של Claude Code',
+    tipTokens: 'סכום על כל בקשות המודל',
+    tipResend: 'כל בקשה שולחת שוב את כל ההקשר, בעיקר כקריאות מטמון זולות.',
+    mainSession: 'סשן ראשי',
+    subagents: 'סוכני משנה',
+    requests: 'בקשות',
+    input: 'קלט',
+    output: 'פלט',
+    cacheRead: 'קריאות מטמון',
+    cacheWrite: 'כתיבות מטמון',
+    more: 'נוספים',
     tier: { light: 'קל', medium: 'בינוני', careful: 'זהיר', heavy: 'כבד', fable: 'פייבל', other: 'אחר' },
     effort: { low: 'נמוך', medium: 'בינוני', high: 'גבוה', xhigh: 'גבוה מאוד', max: 'מקסימלי' },
   },
@@ -536,17 +573,26 @@ const priceOf = (model: string, prompt: number): Price => {
 
 // `isRequest` says the usage is one model request, which is what a prompt-length price
 // is set by; a turn's sum is priced at the model's ordinary prices.
-const costOf = (model: string, u: Usage, isRequest: boolean): number => {
-  const prompt = isRequest ? (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0) : 0
-  const [i, o, r, w] = priceOf(model, prompt)
-  return (
-    ((u.input_tokens || 0) * i +
-      (u.output_tokens || 0) * o +
-      (u.cache_read_input_tokens || 0) * r +
-      (u.cache_creation_input_tokens || 0) * w) /
-    1e6
-  )
+const quadOf = (u: Usage): Quad => [u.input_tokens || 0, u.output_tokens || 0, u.cache_read_input_tokens || 0, u.cache_creation_input_tokens || 0]
+
+const costParts = (model: string, u: Usage, isRequest: boolean): Quad => {
+  const [i, o, r, w] = quadOf(u)
+  const [pi, po, pr, pw] = priceOf(model, isRequest ? i + r + w : 0)
+  return [(i * pi) / 1e6, (o * po) / 1e6, (r * pr) / 1e6, (w * pw) / 1e6]
 }
+
+const addQuad = (a: Quad, b: Quad): Quad => [a[0] + b[0], a[1] + b[1], a[2] + b[2], a[3] + b[3]]
+
+const costOf = (model: string, u: Usage, isRequest: boolean): number => costParts(model, u, isRequest).reduce((a, b) => a + b, 0)
+
+// One more model request added to a split.
+export const addRequest = (s: Split, model: string, u: Usage): Split => ({
+  requests: s.requests + 1,
+  tokens: addQuad(s.tokens, quadOf(u)),
+  usd: addQuad(s.usd, costParts(model, u, true)),
+})
+
+const sum = (q: readonly number[]): number => q.reduce((a, b) => a + b, 0)
 
 // Haiku 4.5 and the Claude 3 models have a 200K window; the rest, Haiku 5.5 included, 1M.
 const windowOf = (model: string): number => (/haiku-4|claude-3/i.test(model) ? 200_000 : 1_000_000)
@@ -819,16 +865,61 @@ const svg = (W: number, H: number, body: string): string =>
   `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${PANE_CSS}${CRAB_CSS}${body}</svg>`
 
 // The pane's own title already says "Agents": the header names the flow, if any.
-const headerSvg = (W: number, title: string, t: ReturnType<typeof totals>): string => {
+// Hover text for the cost and tokens tiles: where the figure comes from, main session by token
+// kind, then each subagent. Plain lines; the SVG's <title> shows them as a tooltip.
+const TIP_AGENTS = 5
+
+const kindLines = (s: Split, by: 'usd' | 'tokens'): string[] => {
+  const t = tr()
+  const names = [t.input, t.output, t.cacheRead, t.cacheWrite]
+  return names
+    .map((name, k) => ({ name, tokens: s.tokens[k] ?? 0, usd: s.usd[k] ?? 0 }))
+    .filter(x => x.tokens > 0)
+    .sort((a, b) => b[by] - a[by])
+    .map(x => `  ${x.name}: ${fmtTokens(x.tokens)} · ≈${fmtCost(x.usd)}`)
+}
+
+const agentLines = (list: readonly AgentRun[], value: (a: AgentRun) => number, fmt: (n: number) => string): string[] => {
+  const top = [...list].sort((a, b) => value(b) - value(a))
+  const lines = top.slice(0, TIP_AGENTS).map(a => `  ${fitText(a.description || a.type, 11, 220)} · ${modelName(a.model)}: ${fmt(value(a))}`)
+  return top.length > TIP_AGENTS ? [...lines, `  +${top.length - TIP_AGENTS} ${tr().more}`] : lines
+}
+
+export const costTip = (cost: number, engineUsd: number | undefined, s: Split, list: readonly AgentRun[]): string => {
+  const t = tr()
+  const subs = sum(list.map(a => a.costUsd))
+  return [
+    `≈${fmtCost(cost)}: ${t.tipEstimate}`,
+    ...(engineUsd !== undefined ? [`${t.tipEngine}: ${fmtCost(engineUsd)}`] : []),
+    '',
+    `${t.mainSession} ≈${fmtCost(sum(s.usd))} · ${s.requests} ${t.requests}`,
+    ...kindLines(s, 'usd'),
+    ...(list.length ? ['', `${t.subagents} ≈${fmtCost(subs)}`, ...agentLines(list, a => a.costUsd, n => '≈' + fmtCost(n))] : []),
+  ].join('\n')
+}
+
+export const tokensTip = (tokens: number, s: Split, list: readonly AgentRun[]): string => {
+  const t = tr()
+  return [
+    `${fmtTokens(tokens)}: ${t.tipTokens}`,
+    t.tipResend,
+    '',
+    `${t.mainSession} ${fmtTokens(sum(s.tokens))} · ${s.requests} ${t.requests}`,
+    ...kindLines(s, 'tokens'),
+    ...(list.length ? ['', `${t.subagents} ${fmtTokens(sum(list.map(a => a.tokens)))}`, ...agentLines(list, a => a.tokens, fmtTokens)] : []),
+  ].join('\n')
+}
+
+const headerSvg = (W: number, title: string, t: ReturnType<typeof totals>, tips: readonly string[] = []): string => {
   const s = tr()
   const gap = 8
   const tw = (W - gap * 2) / 3
   const top = title ? 28 : 0
   const isZero = (v: string) => /^≈?\$?0(\.00)?$|^0:00$/.test(v)
   const tile = (i: number, k: string, v: string) =>
-    `<rect class="tile ln" x="${mx(W, i * (tw + gap), tw)}" y="${top + 0.5}" width="${tw}" height="46" rx="10" stroke-width="1"/>
+    `<g>${tips[i] ? `<title>${xml(tips[i])}</title>` : ''}<rect class="tile ln" x="${mx(W, i * (tw + gap), tw)}" y="${top + 0.5}" width="${tw}" height="46" rx="10" stroke-width="1"/>
 <text class="s" ${startText(W, i * (tw + gap) + 12, top + 17)} font-family="${FONT}" font-size="11" letter-spacing=".4">${k.toUpperCase()}</text>
-<text class="${isZero(v) ? 'm' : 't'}" ${startText(W, i * (tw + gap) + 12, top + 38, false)} font-family="${FONT}" font-size="18" font-weight="600" font-variant-numeric="tabular-nums">${isZero(v) ? '—' : v}</text>`
+<text class="${isZero(v) ? 'm' : 't'}" ${startText(W, i * (tw + gap) + 12, top + 38, false)} font-family="${FONT}" font-size="18" font-weight="600" font-variant-numeric="tabular-nums">${isZero(v) ? '—' : v}</text></g>`
   return svg(
     W,
     headerHeight(title),
@@ -848,6 +939,11 @@ const progressOf = (a: AgentRun): number | null => {
 
 const ctxOf = (a: AgentRun): number => (a.contextMax ? Math.min(100, Math.round((a.contextTokens / a.contextMax) * 100)) : 0)
 
+// The tool calls a row stands for: a subagent's by its agentId, a task's as the main session's calls
+// made while it was in progress. Pending tasks and unknown agents have none.
+export const callsOf = (list: readonly WorkItem[], who: string | undefined, from = -Infinity, to = Infinity): WorkItem[] =>
+  who ? list.filter(w => w.who === who && w.at >= from && w.at <= to) : []
+
 // One row for every kind of work (a subagent, a background job, a task, a planned step), drawn alike:
 // the crab, the title with its status mark, a line of tag and meta with the numbers on its right, and a bar.
 const ROW_H = 58
@@ -864,8 +960,10 @@ type RowSpec = {
   status: string
   dim?: boolean
 }
-const workRowSvg = (W: number, r: RowSpec): string => {
-  const textW = W - 42 - 22
+// Room on the title line for the row's call-list toggle, laid over the drawing.
+const TOGGLE_W = 56
+const workRowSvg = (W: number, r: RowSpec, hasToggle = false): string => {
+  const textW = W - 42 - 22 - (hasToggle ? TOGGLE_W : 0)
   const barW = W - 42
   const statsW = r.stats ? textWidth(r.stats, 11) + 12 : 0
   const left = fitText(`${r.tag}${r.meta ? `  ·  ${r.meta}` : ''}`, 11, Math.max(40, barW - statsW))
@@ -885,7 +983,7 @@ ${statusMark(mx(W, W - 8), 13, r.status, r.color)}
 }
 const ROW_CRAB_Y = 10
 
-const agentSvg = (W: number, a: AgentRun, at: number): string => {
+const agentSvg = (W: number, a: AgentRun, at: number, hasToggle = false): string => {
   const s = tr()
   const tier = tierOf(a.type)
   const ctx = ctxOf(a)
@@ -903,7 +1001,7 @@ const agentSvg = (W: number, a: AgentRun, at: number): string => {
     fill: progressOf(a),
     grey: ctx / 100,
     status: a.status,
-  })
+  }, hasToggle)
 }
 
 const plannedSvg = (W: number, p: Planned): string => {
@@ -940,7 +1038,7 @@ const bgSvg = (W: number, t: BgTask, at: number): string => {
 
 // A step of the app's task list (update_plan).
 const TASK_TINT = '#7FA7D9'
-const taskSvg = (W: number, t: Task, n: number, total: number): string =>
+const taskSvg = (W: number, t: Task, n: number, total: number, hasToggle = false): string =>
   workRowSvg(W, {
     crab: crab(mx(W, 0, crabWidth(CRAB_SCALE)), ROW_CRAB_Y, 'other', t.status === 'pending', t.status === 'in_progress', CRAB_SCALE, isRtl(), TASK_TINT),
     title: t.content,
@@ -951,7 +1049,7 @@ const taskSvg = (W: number, t: Task, n: number, total: number): string =>
     fill: t.status === 'completed' ? 1 : 0,
     status: t.status === 'completed' ? 'done' : t.status === 'in_progress' ? 'running' : 'planned',
     dim: t.status === 'pending',
-  })
+  }, hasToggle)
 
 const compactSvg = (W: number, list: AgentRun[], planned: Planned[], t: ReturnType<typeof totals>): string => {
   const icons = [
@@ -1181,7 +1279,18 @@ async function recordWork($: EngineInterface, tool: string, e: { agentId?: strin
 // The app's task list as update_plan changes it: a whole new list, or a step moved on.
 const MAX_PLAN = 12
 const STATUSES: readonly TaskStatus[] = ['pending', 'in_progress', 'completed']
-export const applyPlan = (list: Task[], e: Record<string, unknown>): Task[] => {
+// Keeps a step's start and end across plan changes, and stamps `at` on a step that starts or completes now.
+const stampTask = (t: Task, old: Task | undefined, at: number): Task => {
+  const { startedAt: _s, endedAt: _e, ...rest } = t
+  const startedAt = old?.startedAt ?? (t.status === 'pending' ? undefined : at)
+  const endedAt = t.status === 'completed' ? (old?.endedAt ?? at) : undefined
+  return { ...rest, ...(startedAt !== undefined ? { startedAt } : {}), ...(endedAt !== undefined ? { endedAt } : {}) }
+}
+
+export const applyPlan = (list: Task[], e: Record<string, unknown>, at = 0): Task[] =>
+  movePlan(list, e).map((t, i) => stampTask(t, Array.isArray(e.items) ? list.find(o => o.content === t.content) : list[i], at))
+
+const movePlan = (list: Task[], e: Record<string, unknown>): Task[] => {
   if (Array.isArray(e.items)) {
     return e.items
       .filter((t): t is { content: string; status?: unknown } => typeof t === 'object' && t !== null && typeof (t as { content?: unknown }).content === 'string')
@@ -1352,11 +1461,13 @@ export const register: Register = (on, options) => {
   })
   // The app's task list (update_plan), shown in the panel; wrap_up checks it off.
   on('tool.call', { tool: 'mcp__ccd_turn__update_plan' }, async ($, e, next) => {
-    await update($, tasks, list => applyPlan(list, e as Record<string, unknown>))
+    const at = await $.clock.now()
+    await update($, tasks, list => applyPlan(list, e as Record<string, unknown>, at))
     return next(e)
   }).catch(($, e, next) => next(e))
   on('tool.call', { tool: 'mcp__ccd_turn__wrap_up' }, async ($, e, next) => {
-    await update($, tasks, list => list.map(t => ({ ...t, status: 'completed' as const })))
+    const at = await $.clock.now()
+    await update($, tasks, list => list.map(t => stampTask({ ...t, status: 'completed' }, t, at)))
     return next(e)
   }).catch(($, e, next) => next(e))
   on('tool.call', async ($, e, next) => {
@@ -1517,13 +1628,12 @@ export const register: Register = (on, options) => {
     const agentId = e.agentId
     const usage = result.usage
     if (!usage) return result
-    const sum = (usage.input_tokens || 0) + (usage.output_tokens || 0) + (usage.cache_read_input_tokens || 0) + (usage.cache_creation_input_tokens || 0)
+    const model = usage.model || e.model
     if (!agentId) {
-      await update($, mainTokens, n => n + sum)
+      await update($, mainSplit, s => addRequest(s, model, usage))
       return result
     }
 
-    const model = usage.model || e.model
     await update($, agents, list =>
       list.map((a): AgentRun =>
         a.agentId !== agentId
@@ -1665,7 +1775,8 @@ export const register: Register = (on, options) => {
     const finished = list.filter(a => a.status !== 'running').reverse()
     const planned = plannedOf(f, list)
     const usage = await $.session.usage().catch(() => null)
-    const t = totals(list, at, { costUsd: usage?.cost?.usd, startedAt: usage?.startedAt, tokens: await read($, mainTokens) })
+    const split = await read($, mainSplit)
+    const t = totals(list, at, { costUsd: usage?.cost?.usd, startedAt: usage?.startedAt, tokens: sum(split.tokens) })
     // The pane's title says "Agents"; inside, only the flow's own name.
     const title = f && !f.isFinished ? f.title : ''
 
@@ -1719,8 +1830,9 @@ export const register: Register = (on, options) => {
       const isTwoCol = W >= 560
       // Each section is a bordered card with a header; rows inside are inset by its border and padding.
       const CARD_IN = 24
-      // A card's header row and its top and bottom border.
-      const CARD_CHROME = LINE_H + 12
+      // A card's header row, its top and bottom border, and its inner top and bottom padding.
+      const CARD_PAD = 8
+      const CARD_CHROME = LINE_H + 12 + CARD_PAD * 2
       const colW = (isTwoCol ? Math.floor(W / 2) - 18 : W) - CARD_IN
 
       // A section header hides or shows all of its rows; each card scrolls on its own under the wheel.
@@ -1735,14 +1847,62 @@ export const register: Register = (on, options) => {
         h: LINE_H,
         node: <Button key={`fold-${k}`} label={`${folded(k) ? (isRtl() ? '◂' : '▸') : '▾'} ${label} · ${count}`} plain onPress={() => fold(k)} />,
       })
-      const rows = <T,>(k: string, items: T[], h: number, draw: (x: T) => unknown, key: (x: T) => string): Item[] =>
-        folded(k) ? [] : items.map(x => ({ key: key(x), h, node: draw(x) }))
+      // A section's rows, each followed by its open call list.
+      const rowItems = (k: string, list: { key: string; node: unknown; extra: Item[] }[]): Item[] =>
+        folded(k) ? [] : list.flatMap(r => [{ key: r.key, h: ROW_H, node: r.node }, ...r.extra])
 
-      type Row = { key: string; node: unknown }
-      const row = (key: string, src: string, alt: string): Row => ({ key, node: <Svg key={key} source={src} alt={alt} width={colW} height={ROW_H} /> })
-      const agentRow = (a: AgentRun) => row(a.id, agentSvg(colW, a, at), `${a.description}: ${modelName(a.model)}, ${a.status === 'running' ? s.isRunning : s.isFinished}`)
+      // A row with tool calls gets a toggle on its title line; pressed, its calls list under it.
+      type Row = { key: string; node: unknown; extra: Item[] }
+      const CALLS_SHOWN = 20
+      const isOpen = (k: string) => !!p.openRows?.includes(k)
+      const toggleRow = (k: string) =>
+        update($, panel, prev => ({ ...prev, openRows: prev.openRows?.includes(k) ? prev.openRows.filter(x => x !== k) : [...(prev.openRows ?? []), k].slice(-20) }))
+      const row = (key: string, src: string, alt: string, calls: WorkItem[] = []): Row => {
+        const art = <Svg key={key} source={src} alt={alt} width={colW} height={ROW_H} />
+        if (!calls.length) return { key, node: art, extra: [] }
+        const open = isOpen(key)
+        const shown = calls.slice(-CALLS_SHOWN)
+        const callLine = (w: WorkItem, i: number): Item => ({
+          key: `${key}-c${i}`,
+          h: LINE_H,
+          node: (
+            <Text key={`${key}-c${i}`} wrap="truncate-end">
+              <Text color={KIND[w.kind][1]}>{`   ${KIND[w.kind][0]} `}</Text>
+              <Text dimColor>{w.label}</Text>
+            </Text>
+          ),
+        })
+        return {
+          key,
+          node: (
+            <Box key={`${key}-box`} flexDirection="column">
+              <Svg key={key} source={src} alt={alt} width={colW} height={ROW_H} />
+              <Box key={`${key}-tog`} position="absolute" top={0} right={2}>
+                <Button key={`calls-${key}`} label={`${open ? '▾' : isRtl() ? '◂' : '▸'} ${calls.length}`} plain dimColor onPress={() => toggleRow(key)} />
+              </Box>
+            </Box>
+          ),
+          extra: !open
+            ? []
+            : [
+                ...(calls.length > shown.length
+                  ? [{ key: `${key}-more`, h: LINE_H, node: <Text key={`${key}-more`} dimColor>{`   +${calls.length - shown.length} ${s.more}`}</Text> }]
+                  : []),
+                ...shown.map(callLine),
+              ],
+        }
+      }
+      const agentCalls = (a: AgentRun) => callsOf(workList, a.agentId)
+      const taskCalls = (t: Task) => (t.startedAt === undefined ? [] : callsOf(workList, 'main', t.startedAt, t.endedAt))
+      const agentRow = (a: AgentRun) => {
+        const calls = agentCalls(a)
+        return row(a.id, agentSvg(colW, a, at, calls.length > 0), `${a.description}: ${modelName(a.model)}, ${a.status === 'running' ? s.isRunning : s.isFinished}`, calls)
+      }
       const bgRow = (t: BgTask) => row(`bg-${t.id}`, bgSvg(colW, t, nowAt), `${t.kind}: ${t.label}, ${t.status}`)
-      const taskRow = (t: Task, i: number) => row(`task-${i}`, taskSvg(colW, t, i + 1, taskList.length), `Task ${i + 1}: ${t.content}, ${t.status}`)
+      const taskRow = (t: Task, i: number) => {
+        const calls = taskCalls(t)
+        return row(`task-${i}`, taskSvg(colW, t, i + 1, taskList.length, calls.length > 0), `Task ${i + 1}: ${t.content}, ${t.status}`, calls)
+      }
       // A step handed to a subagent whose description is the step's text shows as that agent's row (its type and model), not twice.
       const handed = new Set([...running, ...finished].map(a => norm(a.description)))
       const tasksAt = (st: TaskStatus) =>
@@ -1761,11 +1921,11 @@ export const register: Register = (on, options) => {
         ...(isEmpty ? [{ key: 'empty', h: LINE_H, node: <Text key="empty" dimColor>{s.empty}</Text> }] : []),
         // Subagents, background jobs and tasks share the sections: only running or not sets them apart.
         ...(runAll.length ? [sectionHead('run', s.running, String(runAll.length))] : []),
-        ...rows('run', runAll, ROW_H, x => x.node, x => x.key),
+        ...rowItems('run', runAll),
         ...(planAll.length ? [sectionHead('plan', s.planned, String(planAll.length))] : []),
-        ...rows('plan', planAll, ROW_H, x => x.node, x => x.key),
+        ...rowItems('plan', planAll),
         ...(doneAll.length ? [sectionHead('done', s.finished, String(doneAll.length))] : []),
-        ...rows('done', doneAll, ROW_H, x => x.node, x => x.key),
+        ...rowItems('done', doneAll),
       ]
       const kitItems: Item[] = [
         ...(kitRows.length === 0 ? [{ key: 'kit-none', h: LINE_H, node: <Text key="kit-none" dimColor>No skills or plugins seen yet.</Text> }] : []),
@@ -1819,12 +1979,14 @@ export const register: Register = (on, options) => {
         rects.push({ key: k, x, y, w: w + CARD_IN, h: H, max, step: 1 })
         return (
           <Box key={`card-${k}`} flexDirection="column" borderStyle="round" borderColor={EDGE} paddingX={1}>
+            {spacer(`${k}-top`, w, CARD_PAD)}
             <Box key={`card-${k}-head`} flexDirection="row" gap={2} alignItems="center">
               <Text bold>{head}</Text>
               {count && <Text dimColor>{count}</Text>}
             </Box>
             {shown.map(it => it.node as never)}
             {fill && spacer(`${k}-pad`, w, bodyH - used)}
+            {spacer(`${k}-bottom`, w, CARD_PAD)}
           </Box>
         )
       }
@@ -1857,7 +2019,13 @@ export const register: Register = (on, options) => {
           ))}
           <Box flexDirection="column" position="absolute" top={paneParked ? 1 : 0} left={0} right={0} alignItems={align}>
             {/* Row 1: cost, tokens and time. */}
-            <Svg source={headerSvg(W, title, t)} alt={title ? `${title}: ${summary}` : summary} width={W} height={headerH} />
+            <Svg
+              source={headerSvg(W, title, t, [costTip(t.cost, usage?.cost?.usd, split, list), tokensTip(t.tokens, split, list)])}
+              alt={title ? `${title}: ${summary}` : summary}
+              width={W}
+              height={headerH}
+              isInteractive
+            />
             {/* Row 2: the crew beside the skills and plugins. */}
             <Box flexDirection={isTwoCol ? (isRtl() ? 'row-reverse' : 'row') : 'column'}>
               {left}
