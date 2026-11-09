@@ -43,11 +43,9 @@ export type AgentRun = {
 export type Panel = {
   isCompact: boolean
   isDoneCollapsed: boolean
-  /** The Map's zoom: 0 chips, 1 cards (default), 2 detailed cards. */
-  mapZoom?: number
-  /** Folded sections, by key: run, plan, tasks, bg, map. Finished uses isDoneCollapsed. */
+  /** Folded sections, by key: run, plan, tasks, bg. Finished uses isDoneCollapsed. */
   collapsed?: Record<string, boolean>
-  /** Each section's own scroll: the first item it shows (the map's in px). */
+  /** Each section's own scroll: the first item it shows. */
   offsets?: Record<string, number>
   autoOpenedFor: string
 }
@@ -68,19 +66,6 @@ export type WorkItem = {
   at: number
   /** The file it read or edited, as the tool was given it. */
   path?: string
-}
-
-/** One community of code as graphify grouped it (graphify-out/graph.json). */
-export type Community = { id: number; name: string; files: string[]; symbols: number }
-
-/** The project map the panel draws: the largest communities and the links between them. */
-export type ProjectMap = {
-  mtimeMs: number
-  /** How many communities the graph has, shown or not. */
-  total: number
-  communities: Community[]
-  /** [community, community, how many calls and references cross between them] */
-  links: [number, number, number][]
 }
 
 export type SkillKind = 'skill' | 'plugin'

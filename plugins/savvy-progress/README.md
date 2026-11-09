@@ -1,6 +1,6 @@
 # savvy-progress
 
-Forked from [savvy-progress](https://github.com/JohnnyVizz/claude-kit/tree/main/plugins/savvy-progress) by johnnyvizz (MIT). Changed in this fork: the band above the prompt adds a USAGE row from ribbon and stands in for ribbon's and ponytail's rows; the panel is laid out in three rows (cost, tokens and time; the crew beside skills and plugins; the project map); the Map is graphify's map of the project (`graphify-out/graph.json`) with a crab on the card each agent, subagent and background task works in; and `routeModel` runs background subagents with no pinned model on Sonnet (Haiku for `Explore`), except the `searcher`, `editor` and `reviewer` agents and `savvy-*` workers.
+Forked from [savvy-progress](https://github.com/JohnnyVizz/claude-kit/tree/main/plugins/savvy-progress) by johnnyvizz (MIT). Changed in this fork: the band above the prompt adds a USAGE row from ribbon and stands in for ribbon's and ponytail's rows; the panel is laid out in two rows (cost, tokens and time; the crew beside skills and plugins), each card scrolling on its own under the wheel; a task-list step handed to a subagent whose description is the step's text shows as that agent's row; and `routeModel` runs background subagents with no pinned model on Sonnet (Haiku for `Explore`), except the `searcher`, `editor` and `reviewer` agents and `savvy-*` workers.
 
 A Claude Code mod: a progress bar above the prompt and a live panel of subagents. Made for the [savvy-flow](https://github.com/JohnnyVizz/claude-kit/tree/main/plugins/savvy-flow) skill, and useful with any subagents.
 
@@ -27,7 +27,19 @@ Cost is a rough estimate from token counts and a built-in per-model price table 
 ## Install
 
 ```
-/plugin install savvy-progress --marketplace <owner>/rowes-workflow
+/plugin install savvy-progress --marketplace ITMERowe/rowes-workflow
 ```
 
 The full setup is in the [repository README](../../README.md).
+
+## Developing
+
+Run these from this folder after each change:
+
+```bash
+claude plugin validate .
+```
+
+```bash
+claude plugin test .
+```

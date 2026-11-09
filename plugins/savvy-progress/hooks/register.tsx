@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { AgentRun, BgTask, Flow, Panel, Phase, PlannedTask, ProjectMap, SkillKind, SkillUse, Task, TaskStatus, WorkItem, WorkKind } from '../types'
+import type { AgentRun, BgTask, Flow, Panel, Phase, PlannedTask, SkillKind, SkillUse, Task, TaskStatus, WorkItem, WorkKind } from '../types'
 
 const flow = atom({ plugin: 'savvy-progress', key: 'flow' } as const, null)
 const agents = atom({ plugin: 'savvy-progress', key: 'agents' } as const, [])
@@ -42,7 +42,7 @@ const STEP_BRIEF = `
 Progress reporting: before any other work, call \`${STEP_TOOL}\` with \`total\` (your plan in 3-8 steps) and \`done: 0\`; call it again with \`done\` and a few-word \`note\` as each step finishes. It only draws a progress bar.`
 const PANE = 'savvy-agents'
 
-// Each desktop card's box in pane px and how far it scrolls (list cards in items, the map in px).
+// Each desktop card's box in pane px and how far it scrolls (in items).
 type CardRect = { key: string; x: number; y: number; w: number; h: number; max: number; step: number }
 // Set by the last desktop draw; the wheel hook reads it to find the card under the pointer.
 let cardRects: CardRect[] = []
@@ -310,12 +310,12 @@ const fitText = (s: string, size: number, maxW: number): string => {
   return out + '…'
 }
 
-// The savvy pixel bar, shared by the band's rows and the Map's cards: a dithered fill,
+// The savvy pixel bar, the band's rows: a dithered fill,
 // sparse at the start and dense toward the head, a faint layer for work handed out,
 // ticks between tasks, and a pill with the count riding the head. Pixels twinkle in
 // four out-of-phase groups; a calm bar (finished) settles to a slow glow.
 const BAR_CSS = (isCalm: boolean): string => `<style>
-.t{fill:#1f1f1f}.m{fill:#8a8a8a}.k{fill:#e4e4e2}.tk{fill:#b4b4b0}
+.t{fill:#1f1f1f}.m{fill:#6b6b68}.k{fill:#e4e4e2}.tk{fill:#b4b4b0}
 @media (prefers-color-scheme: dark){.t{fill:#ececec}.m{fill:#9a9a9a}.k{fill:#2c2c2c}.tk{fill:#5a5a5a}}
 .t0,.t1,.t2,.t3{animation:tw ${isCalm ? 3.2 : 2.2}s ease-in-out infinite}
 .t1{animation-duration:${isCalm ? 3.8 : 2.8}s;animation-delay:-.7s}.t2{animation-duration:${isCalm ? 4.4 : 1.9}s;animation-delay:-1.3s}.t3{animation-duration:${isCalm ? 3.5 : 3.3}s;animation-delay:-.4s}
@@ -618,8 +618,8 @@ const gridSvg = (W: number, H: number) => `<svg xmlns="http://www.w3.org/2000/sv
 const EDGE = '#3d3d3a'
 
 const PANE_CSS = `<style>
-.t{fill:#1f1f1f}.s{fill:#6b6b68}.m{fill:#9a9a96}.k{fill:#ecebe8}.ln{stroke:#e4e4e1}.tile{fill:#f4f3f0}
-@media (prefers-color-scheme: dark){.t{fill:#ececec}.s{fill:#a8a8a4}.m{fill:#7d7d79}.k{fill:#2c2c2b}.ln{stroke:#333331}.tile{fill:#262625}}
+.t{fill:#1f1f1f}.s{fill:#4f4f4c}.m{fill:#6b6b68}.k{fill:#ecebe8}.ln{stroke:#e4e4e1}.tile{fill:#f4f3f0}
+@media (prefers-color-scheme: dark){.t{fill:#ececec}.s{fill:#bcbcb8}.m{fill:#9a9a96}.k{fill:#2c2c2b}.ln{stroke:#333331}.tile{fill:#262625}}
 .live{animation:p 1.6s ease-in-out infinite}@keyframes p{50%{opacity:.3}}
 @media (prefers-reduced-motion: reduce){.live{animation:none}}
 </style>`
@@ -821,8 +821,8 @@ const headerSvg = (W: number, title: string, t: ReturnType<typeof totals>): stri
   const isZero = (v: string) => /^≈?\$?0(\.00)?$|^0:00$/.test(v)
   const tile = (i: number, k: string, v: string) =>
     `<rect class="tile ln" x="${mx(W, i * (tw + gap), tw)}" y="${top + 0.5}" width="${tw}" height="46" rx="10" stroke-width="1"/>
-<text class="s" ${startText(W, i * (tw + gap) + 12, top + 17)} font-family="${FONT}" font-size="10" letter-spacing=".4">${k.toUpperCase()}</text>
-<text class="${isZero(v) ? 'm' : 't'}" ${startText(W, i * (tw + gap) + 12, top + 38, false)} font-family="${FONT}" font-size="18" font-weight="600" font-variant-numeric="tabular-nums">${v}</text>`
+<text class="s" ${startText(W, i * (tw + gap) + 12, top + 17)} font-family="${FONT}" font-size="11" letter-spacing=".4">${k.toUpperCase()}</text>
+<text class="${isZero(v) ? 'm' : 't'}" ${startText(W, i * (tw + gap) + 12, top + 38, false)} font-family="${FONT}" font-size="18" font-weight="600" font-variant-numeric="tabular-nums">${isZero(v) ? '—' : v}</text>`
   return svg(
     W,
     headerHeight(title),
@@ -968,149 +968,9 @@ const compactSvg = (W: number, list: AgentRun[], planned: Planned[], t: ReturnTy
   )
 }
 
-// --- the desktop Map: one card per subagent and background task, with what each is
-// working on: the files it reads and edits, the commands it runs, what it searches.
-// --- the desktop Map: the project as graphify maps it (graphify-out/graph.json), one card
-// per community of code, linked where the code calls across, with a crab on the card each
-// agent, subagent and background task is working in. Work outside the code (commands,
-// web, searches, background tasks) sits on its own card.
-export const GRAPH = 'graphify-out/graph.json'
-const MAP_MAX = 24
+// --- Live work: how long the main session counts as working after its last action, and the glyph per kind of work.
 const LIVE = '#E0B34A'
 const LIVE_MS = 90_000
-// Three zoom levels: 0 chips (name only, up to 24), 1 cards with counts (default, up to
-// 16), 2 cards with the latest action and a touched-files bar (up to 12).
-export type Zoom = 0 | 1 | 2
-const ZOOMS: Record<Zoom, { w: number; h: number; max: number }> = {
-  0: { w: 118, h: 26, max: 24 },
-  1: { w: 150, h: 40, max: 16 },
-  2: { w: 200, h: 62, max: 12 },
-}
-export const zoomOf = (v: unknown): Zoom => (v === 0 || v === 2 ? v : 1)
-const CARD_GAP = 8
-const MAP_PAD = 4
-export const mapCardCount = (p: ProjectMap, hasOff: boolean, z: Zoom): number => Math.min(p.communities.length, ZOOMS[z].max) + (hasOff ? 1 : 0)
-
-// The Map's layout: a force-directed graph. Communities graphify links with more calls and
-// references pull closer; every card pushes the others away; a light pull to the centre
-// keeps loose ones near. It runs in card units (one card plus its gap is 1 × 1), so wide,
-// short cards space evenly, then overlaps are pushed apart and the result scaled to pixels.
-// Deterministic: the same graph, width and zoom always lay out the same.
-export type MapLayout = { ids: number[]; pos: Map<number, { x: number; y: number }>; w: number; h: number; H: number }
-const LEGEND_H = 26
-const layoutCache = new Map<string, MapLayout>()
-export const mapLayout = (W: number, p: ProjectMap, hasOff: boolean, z: Zoom): MapLayout => {
-  const Z = ZOOMS[z]
-  const ids = [...p.communities.slice(0, Z.max).map(c => c.id), ...(hasOff ? [OFF_CODE] : [])]
-  const key = `${p.mtimeMs}|${p.total}|${W}|${z}|${ids.join(',')}`
-  const hit = layoutCache.get(key)
-  if (hit) return hit
-  const gx = z === 0 ? 18 : 26
-  const gy = z === 0 ? 16 : 22
-  const unitX = Z.w + gx
-  const unitY = Z.h + gy
-  const umax = Math.max(0, (W - MAP_PAD * 2 - Z.w) / unitX)
-  const n = ids.length
-  const at = new Map(ids.map((id, i) => [id, i]))
-  const links = p.links.flatMap(([a, b, w]) => {
-    const i = at.get(a)
-    const j = at.get(b)
-    return i === undefined || j === undefined ? [] : [{ i, j, w }]
-  })
-  // A golden-angle spiral from the centre, largest first: a calm, repeatable start.
-  const cu = umax / 2
-  const pts = ids.map((_, i) => ({ u: cu + Math.cos(i * 2.39996) * Math.sqrt(i) * 0.9, v: Math.sin(i * 2.39996) * Math.sqrt(i) * 0.9 }))
-  const k = 1.05
-  const steps = 360
-  for (let s = 0; s < steps; s++) {
-    const temp = 0.5 * (1 - s / steps) + 0.01
-    const d = pts.map(() => ({ u: 0, v: 0 }))
-    for (let i = 0; i < n; i++)
-      for (let j = i + 1; j < n; j++) {
-        const pi = pts[i]!
-        const pj = pts[j]!
-        const du = pi.u - pj.u || 0.01
-        const dv = pi.v - pj.v || 0.01
-        const dist = Math.max(0.05, Math.hypot(du, dv))
-        // Short range only: far cards leave each other alone, so the map stays compact.
-        if (dist > 2.2) continue
-        const f = (k * k) / dist
-        d[i]!.u += (du / dist) * f
-        d[i]!.v += (dv / dist) * f
-        d[j]!.u -= (du / dist) * f
-        d[j]!.v -= (dv / dist) * f
-      }
-    for (const { i, j, w } of links) {
-      const pi = pts[i]!
-      const pj = pts[j]!
-      const du = pi.u - pj.u
-      const dv = pi.v - pj.v
-      const dist = Math.max(0.05, Math.hypot(du, dv))
-      // More links between two communities, a stronger pull: they settle closer.
-      const f = ((dist * dist) / k) * (0.6 + Math.log2(1 + w) * 0.5)
-      d[i]!.u -= (du / dist) * f
-      d[i]!.v -= (dv / dist) * f
-      d[j]!.u += (du / dist) * f
-      d[j]!.v += (dv / dist) * f
-    }
-    pts.forEach((pt, i) => {
-      const di = d[i]!
-      // The pane is narrow and tall: pull harder up and down than side to side.
-      di.u += (cu - pt.u) * 0.3
-      di.v += -pt.v * 0.35
-      const len = Math.hypot(di.u, di.v) || 1
-      const step = Math.min(len, temp)
-      pt.u = Math.max(0, Math.min(umax, pt.u + (di.u / len) * step))
-      pt.v += (di.v / len) * step
-    })
-  }
-  // No two cards overlap: push each overlapping pair apart along the shorter overlap.
-  for (let pass = 0; pass < 80; pass++) {
-    let moved = false
-    for (let i = 0; i < n; i++)
-      for (let j = i + 1; j < n; j++) {
-        const pi = pts[i]!
-        const pj = pts[j]!
-        const ou = 1 - Math.abs(pi.u - pj.u)
-        const ov = 1 - Math.abs(pi.v - pj.v)
-        if (ou <= 0 || ov <= 0) continue
-        moved = true
-        const canU = ou < ov
-        if (canU) {
-          const sgn = pi.u < pj.u ? -1 : 1
-          pi.u = Math.max(0, Math.min(umax, pi.u + (sgn * ou) / 2 + sgn * 0.01))
-          pj.u = Math.max(0, Math.min(umax, pj.u - (sgn * ou) / 2 - sgn * 0.01))
-          // Pinned against an edge: make way down instead.
-          if (1 - Math.abs(pi.u - pj.u) > 0.02) {
-            const sv = pi.v < pj.v ? -1 : 1
-            pi.v += (sv * ov) / 2 + sv * 0.01
-            pj.v -= (sv * ov) / 2 + sv * 0.01
-          }
-        } else {
-          const sv = pi.v < pj.v ? -1 : 1
-          pi.v += (sv * ov) / 2 + sv * 0.01
-          pj.v -= (sv * ov) / 2 + sv * 0.01
-        }
-      }
-    if (!moved) break
-  }
-  const vmin = Math.min(0, ...pts.map(pt => pt.v))
-  const pos = new Map(ids.map((id, i) => [id, { x: MAP_PAD + pts[i]!.u * unitX, y: MAP_PAD + (pts[i]!.v - vmin) * unitY }]))
-  const bottom = Math.max(0, ...[...pos.values()].map(q => q.y + Z.h))
-  const out: MapLayout = { ids, pos, w: Z.w, h: Z.h, H: Math.round(bottom + MAP_PAD + LEGEND_H) }
-  if (layoutCache.size > 40) layoutCache.clear()
-  layoutCache.set(key, out)
-  return out
-}
-
-// Where the line from a card's centre toward a point leaves the card.
-const edgePoint = (cx: number, cy: number, hw: number, hh: number, tx: number, ty: number) => {
-  const dx = tx - cx
-  const dy = ty - cy
-  const t = Math.min(dx ? hw / Math.abs(dx) : Infinity, dy ? hh / Math.abs(dy) : Infinity)
-  return { x: cx + dx * t, y: cy + dy * t }
-}
-
 const KIND: Record<WorkKind, [glyph: string, color: string, word: string]> = {
   read: ['◇', '#6AAABD', 'read'],
   edit: ['✎', '#D97757', 'edit'],
@@ -1123,255 +983,12 @@ const KIND: Record<WorkKind, [glyph: string, color: string, word: string]> = {
 const BG_TINTS = ['#4FA3A5', '#8F8CF4', '#5B8DEF', '#C9A227', '#D96BA0', '#7FB069']
 const tintOf = (id: string): string => BG_TINTS[[...id].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7) % BG_TINTS.length] ?? '#4FA3A5'
 
-const pathKey = (p: string): string => p.replace(/\\/g, '/').replace(/^\.\//, '').toLowerCase()
-
-// A community's name as graphify gave it, shortened to the last two parts of a path.
-const shortName = (name: string): string => {
-  const parts = name.replace(/\\/g, '/').split('/').filter(Boolean)
-  return (parts.length > 1 ? parts.slice(-2).join('/') : name).replace(/\.(tsx?|jsx?|mjs|cjs|py|php|md)$/, '')
-}
-
-// graph.json to the few cards the panel draws: the largest communities, their files,
-// and how many calls and references cross between each pair.
-export const projectOf = (raw: string, mtimeMs: number): ProjectMap => {
-  type Node = { id?: unknown; community?: unknown; community_name?: unknown; source_file?: unknown }
-  type Link = { source?: unknown; target?: unknown }
-  const g = JSON.parse(raw) as { nodes?: Node[]; links?: Link[]; edges?: Link[] }
-  const byId = new Map<string, number>()
-  const groups = new Map<number, { name: string; files: Set<string>; symbols: number }>()
-  for (const n of g.nodes ?? []) {
-    if (typeof n.community !== 'number' || typeof n.id !== 'string') continue
-    byId.set(n.id, n.community)
-    const cur = groups.get(n.community) ?? { name: typeof n.community_name === 'string' ? n.community_name : `Community ${n.community}`, files: new Set<string>(), symbols: 0 }
-    cur.symbols++
-    if (typeof n.source_file === 'string' && n.source_file) cur.files.add(pathKey(n.source_file))
-    groups.set(n.community, cur)
-  }
-  const kept = [...groups.entries()].sort((a, b) => b[1].files.size - a[1].files.size || b[1].symbols - a[1].symbols).slice(0, MAP_MAX)
-  const keptIds = new Set(kept.map(([id]) => id))
-  const weights = new Map<string, number>()
-  for (const l of g.links ?? g.edges ?? []) {
-    const a = typeof l.source === 'string' ? byId.get(l.source) : undefined
-    const b = typeof l.target === 'string' ? byId.get(l.target) : undefined
-    if (a === undefined || b === undefined || a === b || !keptIds.has(a) || !keptIds.has(b)) continue
-    const k = a < b ? `${a}:${b}` : `${b}:${a}`
-    weights.set(k, (weights.get(k) ?? 0) + 1)
-  }
-  const links = [...weights.entries()].map(([k, w]): [number, number, number] => {
-    const [a, b] = k.split(':').map(Number)
-    return [a ?? 0, b ?? 0, w]
-  })
-  // Order the cards so linked ones sit side by side: start from the largest, then take
-  // whichever card is most linked to those already placed.
-  const order: number[] = []
-  const left = new Set(kept.map(([id]) => id))
-  const pull = (id: number) => links.reduce((s, [a, b, w]) => s + ((a === id && order.includes(b)) || (b === id && order.includes(a)) ? w : 0), 0)
-  while (left.size > 0) {
-    const pick = order.length === 0 ? kept[0]![0] : [...left].sort((x, y) => pull(y) - pull(x))[0]!
-    order.push(pick)
-    left.delete(pick)
-  }
-  const info = new Map(kept)
-  return {
-    mtimeMs,
-    total: groups.size,
-    communities: order.map(id => {
-      const c = info.get(id)!
-      return { id, name: shortName(c.name), files: [...c.files].slice(0, 400), symbols: c.symbols }
-    }).map((c, _i, all) => {
-      if (all.filter(o => o.name === c.name).length < 2) return c
-      const base = (c.files[0] ?? '').split('/').pop()?.replace(/\.[^.]+$/, '') ?? ''
-      return base && base !== c.name.split('/').pop() ? { ...c, name: `${c.name} · ${base}` } : { ...c, name: `${c.name} #${c.id}` }
-    }),
-    links: links.sort((a, b) => b[2] - a[2]).slice(0, 24),
-  }
-}
-
-// Who is on the map: the main session, each subagent and each background task, with the
-// last thing each worked on.
-export type Crew = {
-  key: string
-  name: string
-  costume: string
-  tint?: string
-  isRunning: boolean
-  item?: WorkItem
-}
-
-export const crewOf = (list: AgentRun[], bgs: BgTask[], items: WorkItem[], at: number, idleAt = 0): Crew[] => {
-  const last = (who: string) => [...items].reverse().find(w => w.who === who)
-  const crew: Crew[] = []
-  const main = last('main')
-  if (main && main.at > idleAt && at - main.at < LIVE_MS) crew.push({ key: 'main', name: 'main', costume: 'king', isRunning: true, item: main })
-  for (const a of list) {
-    if (a.status !== 'running' || !a.agentId) continue
-    crew.push({ key: a.id, name: a.description || a.type, costume: costumeOf(a), isRunning: true, item: last(a.agentId) })
-  }
-  for (const t of bgs) {
-    if (t.status !== 'running') continue
-    crew.push({ key: t.id, name: t.label, costume: 'other', tint: tintOf(t.id), isRunning: true, item: { who: t.id, kind: 'cli', label: t.label, at: t.startedAt } })
-  }
-  return crew
-}
-
-// Each crew member on the card of the community holding the file it last worked on;
-// anything else (a command, the web, a search, a file outside the graph) is off the code.
-export const OFF_CODE = -1
-// Work paths are absolute and graph paths relative to where graphify ran: match the tail.
-export const inFile = (path: string, file: string): boolean => {
-  const k = pathKey(path)
-  return k === file || k.endsWith(`/${file}`)
-}
-export const placeCrew = (p: ProjectMap | null, crew: readonly Crew[]): Map<number, Crew[]> => {
-  const out = new Map<number, Crew[]>()
-  for (const m of crew) {
-    const path = m.item?.path
-    const id = path ? (p?.communities.find(c => c.files.some(f => inFile(path, f)))?.id ?? OFF_CODE) : OFF_CODE
-    out.set(id, [...(out.get(id) ?? []), m])
-  }
-  return out
-}
-
-const MAP_CSS = `<style>
-.card{fill:#f4f3f0;stroke:#e9e8e5}.card.hot{fill:#f9f3e6;stroke:#e8d9b0}.card.on{fill:#fdf5e9;stroke:#e0b34a}.wire{stroke:#a8a7a0}.wdot{fill:#a8a7a0}
-@media (prefers-color-scheme: dark){.card{fill:#232322;stroke:#2b2b29}.card.hot{fill:#262420;stroke:#6b5a2e}.card.on{fill:#2f271c;stroke:#e0b34a}.wire{stroke:#6a6a62}.wdot{fill:#6a6a62}}
-.wire{stroke-dasharray:4 3}
-</style>`
-
-const crewCrab = (m: Crew, x: number, y: number, scale: number): string =>
-  m.tint ? crab(x, y, 'other', false, m.isRunning, scale * 0.8, false, m.tint) : crab(x, y, m.costume, false, m.isRunning, scale)
-
-export const mapSvg = (W: number, p: ProjectMap, placed: Map<number, Crew[]>, touched: readonly string[], z: Zoom = 1): string => {
-  const Z = ZOOMS[z]
-  const off = placed.get(OFF_CODE) ?? []
-  const shown = p.communities.slice(0, Z.max)
-  const cards = [...shown.map(c => ({ id: c.id, c })), ...(off.length ? [{ id: OFF_CODE, c: null }] : [])]
-  const L = mapLayout(W, p, off.length > 0, z)
-  const cw = L.w
-  const ch = L.h
-  const spot = (i: number) => L.pos.get(cards[i]?.id ?? 0) ?? { x: MAP_PAD, y: MAP_PAD }
-  const index = new Map(cards.map((k, i) => [k.id, i]))
-  const H = L.H
-
-  const wires = p.links.slice(0, 14).flatMap(([a, b, w]) => {
-    const i = index.get(a)
-    const j = index.get(b)
-    if (i === undefined || j === undefined) return []
-    const s = spot(i)
-    const t = spot(j)
-    // Straight from edge to edge, along the line between the two cards' centres.
-    const [ax, ay, bx, by] = [s.x + cw / 2, s.y + ch / 2, t.x + cw / 2, t.y + ch / 2]
-    const { x: x1, y: y1 } = edgePoint(ax, ay, cw / 2, ch / 2, bx, by)
-    const { x: x2, y: y2 } = edgePoint(bx, by, cw / 2, ch / 2, ax, ay)
-    return [
-      `<path class="wire" d="M${x1} ${y1} L${x2} ${y2}" fill="none" stroke-width="${1 + Math.min(2, Math.log2(w) / 2)}"/><circle class="wdot" cx="${x1}" cy="${y1}" r="2.5"/><circle class="wdot" cx="${x2}" cy="${y2}" r="2.5"/>`,
-    ]
-  })
-
-  const crabScale = z === 0 ? 0.42 : z === 1 ? 0.5 : 0.62
-  const crabStep = Math.round(CRAB_BOX * crabScale) + 2
-  const body = cards.map((k, i) => {
-    const { x, y } = spot(i)
-    const crew = placed.get(k.id) ?? []
-    const isLive = crew.length > 0
-    const latest = [...crew].filter(m => m.item).sort((a, b) => (b.item?.at ?? 0) - (a.item?.at ?? 0))[0]
-    const maxCrabs = z === 0 ? 2 : 3
-    const textW = cw - 16 - Math.min(maxCrabs, crew.length) * crabStep
-    const name = k.c ? k.c.name : 'Terminal & web'
-    const files = k.c?.files ?? []
-    const hit = files.filter(f => touched.some(t => inFile(t, f))).length
-    const fileWord = `${files.length} file${files.length === 1 ? '' : 's'}`
-    const sub = k.c ? (z === 2 ? `${fileWord} · ${k.c.symbols} symbols` : fileWord) : `${off.length} running`
-    const isHot = !isLive && hit > 0
-    const nameSize = z === 0 ? 11 : 12
-    const nameY = z === 0 ? ch / 2 + 4 : 16
-    const parts = [
-      `<rect class="card${isLive ? ' on' : isHot ? ' hot' : ''}" x="${x}" y="${y}" width="${cw}" height="${ch}" rx="${z === 0 ? 6 : 8}" stroke-width="1"/>`,
-      isLive || isHot ? `<rect x="${x + 1}" y="${y + 5}" width="3" height="${ch - 10}" rx="1.5" fill="${isLive ? LIVE : '#8a7a4a'}"/>` : '',
-      `<text class="${isLive || isHot ? 't' : 's'}" x="${x + 10}" y="${y + nameY}" font-family="${FONT}" font-size="${nameSize}" font-weight="${isLive ? 700 : 600}">${xml(fitText(name, nameSize, textW))}</text>`,
-    ]
-    if (z >= 1) parts.push(`<text class="m" x="${x + 10}" y="${y + 30}" font-family="${FONT}" font-size="10">${xml(fitText(sub, 9.5, textW))}</text>`)
-    if (z === 2) {
-      if (latest?.item)
-        parts.push(
-          `<text x="${x + 8}" y="${y + 44}" font-family="${FONT}" font-size="10"><tspan fill="${KIND[latest.item.kind][1]}">${KIND[latest.item.kind][0]}</tspan><tspan class="t" dx="5">${xml(fitText(latest.item.label, 10, cw - 70))}</tspan><tspan class="m" dx="5">${xml(fitText(latest.name, 9, 60))}</tspan></text>`,
-        )
-      else if (hit) parts.push(`<text class="m" x="${x + 8}" y="${y + 44}" font-family="${FONT}" font-size="10">${hit} touched</text>`)
-      if (k.c) parts.push(`<g transform="translate(${x + 8},${y + 50})">${barGroup(`m-${k.id}`, cw - 16, 6, files.length ? hit / files.length : 0, isLive ? '#E0B34A' : ACCENT, '')}</g>`)
-    }
-    const crabY = y + (ch - CRAB_BOX * crabScale) / 2 - (z === 2 ? 8 : 0)
-    parts.push(
-      crew
-        .slice(0, maxCrabs)
-        .map((m, n) => crewCrab(m, x + cw - 4 - (n + 1) * crabStep, crabY, crabScale))
-        .join(''),
-    )
-    if (crew.length > maxCrabs)
-      parts.push(`<text class="m" x="${x + cw - 6 - maxCrabs * crabStep}" y="${crabY + 12}" font-family="${FONT}" font-size="9" text-anchor="end">+${crew.length - maxCrabs}</text>`)
-    return parts.join('')
-  })
-  const hidden = p.total - shown.length
-  const legend = (Object.keys(KIND) as WorkKind[]).map(k => `<tspan fill="${KIND[k][1]}">${KIND[k][0]}</tspan> ${KIND[k][2]}`).join('    ')
-  return svg(
-    W,
-    H,
-    `${MAP_CSS}${BAR_CSS(false)}
-${wires.join('')}
-${body.join('')}
-<text class="s" x="${MAP_PAD}" y="${H - 6}" font-family="${FONT}" font-size="11">${legend}</text>
-${hidden > 0 ? `<text class="m" x="${W - MAP_PAD}" y="${H - 6}" text-anchor="end" font-family="${FONT}" font-size="11">${hidden} more · zoom out</text>` : ''}`,
-  )
-}
-
-// The graph is read once per change: the panel checks its mtime on each draw. graphify
-// writes it where it ran, which may be a folder or two above the session's own.
-const GRAPH_DIRS = ['', '../', '../../', '../../../']
-let projectCache: { at: string; mtimeMs: number; map: ProjectMap | null; note: string } | null = null
-const loadProject = async ($: EngineInterface): Promise<{ map: ProjectMap | null; note: string; root: string }> => {
-  for (const dir of GRAPH_DIRS) {
-    const at = `${dir}${GRAPH}`
-    const st = await $.fs.stat(at).catch(() => null)
-    if (!st || st.kind !== 'file') continue
-    if (projectCache?.at === at && projectCache.mtimeMs === st.mtimeMs) return { ...projectCache, root: dir || '.' }
-    let map: ProjectMap | null = null
-    let note = ''
-    if (st.size > 4 * 1024 * 1024) note = 'graph.json is over 4 MiB, too large to read'
-    else {
-      try {
-        map = projectOf(await $.fs.read(at), st.mtimeMs)
-      } catch {
-        note = 'graph.json could not be read'
-      }
-    }
-    projectCache = { at, mtimeMs: st.mtimeMs, map, note }
-    return { map, note, root: dir || '.' }
-  }
-  return { map: null, note: '', root: '.' }
-}
-
-let isBuilding = false
-const buildProject = async ($: EngineInterface, root: string): Promise<void> => {
-  if (isBuilding) return
-  isBuilding = true
-  $.ui.toast('graphify: mapping the project…')
-  try {
-    const r = await $.process.run(['graphify', 'update', '.'], { cwd: root, timeoutMs: 600_000 })
-    $.ui.toast(r.exitCode === 0 ? 'graphify: project map ready' : `graphify failed (exit ${r.exitCode})`)
-  } catch {
-    $.ui.toast('graphify is not installed: pip install graphifyy')
-  } finally {
-    isBuilding = false
-    await $.ui.invalidate('ui.render')
-  }
-}
-
 // --- Skills and plugins: what the session has loaded or called, each with its own crab.
-// Active means used in the last few minutes; the rest are enabled plugins and skills used
+// Active means used since the main session's last turn ended; the rest are enabled plugins and skills used
 // earlier. Their tints are a palette of their own, apart from subagent tiers and tasks.
 const SKILL_TINTS = ['#F4D35E', '#EE964B', '#FF6B6B', '#2EC4B6', '#C3B1E1', '#F7A1C4', '#A3E635', '#FDBA74']
 const skillTint = (name: string): string =>
   SKILL_TINTS[[...name].reduce((h, ch) => (h * 33 + ch.charCodeAt(0)) >>> 0, 11) % SKILL_TINTS.length] ?? '#F4D35E'
-const SKILL_LIVE_MS = 5 * 60_000
 const SKILL_SCALE = 0.7
 const SKILL_ROW_H = 38
 const SKILL_MAX = 14
@@ -1396,18 +1013,21 @@ export const useKit = (list: readonly SkillUse[], kind: SkillKind, name: string,
 
 // The enabled plugins a hook's added context names: a plugin's command hooks run in the engine's core,
 // so the context they add is the only sign of them.
-// shortcut: matches by name, so a context naming another plugin marks that one too; use the hook's own plugin if the trace ever names it.
+// A hook announces itself at the top of its text; a name deeper in (memory notes, skill lists) is only a mention.
+// shortcut: matches by name in the first HEAD characters, so a hook that announces itself later is missed; use the hook's own plugin if the trace ever names it.
+const HEAD = 400
 export const pluginsIn = (texts: readonly string[], enabled: readonly string[]): string[] =>
   enabled.filter(n => {
     const re = new RegExp(`(^|[^\\w-])${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^\\w-]|$)`, 'i')
-    return texts.some(t => re.test(t))
+    return texts.some(t => re.test(t.slice(0, HEAD)))
   })
 
 export type KitRow = { name: string; kind: SkillKind; state: 'active' | 'used' | 'idle'; use?: SkillUse }
 
 // Every skill and plugin to show: used ones newest first, then enabled ones not used yet.
-export const kitRowsOf = (uses: readonly SkillUse[], enabled: readonly string[], at: number): KitRow[] => {
-  const used = [...uses].sort((a, b) => b.at - a.at).map((u): KitRow => ({ name: u.name, kind: u.kind, state: at - u.at < SKILL_LIVE_MS ? 'active' : 'used', use: u }))
+// Active means used since the main session's last turn ended: it goes back to idle when that turn does.
+export const kitRowsOf = (uses: readonly SkillUse[], enabled: readonly string[], idleAt: number): KitRow[] => {
+  const used = [...uses].sort((a, b) => b.at - a.at).map((u): KitRow => ({ name: u.name, kind: u.kind, state: u.at > idleAt ? 'active' : 'used', use: u }))
   // A skill named plugin:skill counts as use of that plugin.
   const seen = new Set(uses.flatMap(u => [u.name, u.name.split(':')[0] ?? u.name]))
   const idle = enabled.filter(n => !seen.has(n)).sort().map((n): KitRow => ({ name: n, kind: 'plugin', state: 'idle' }))
@@ -1435,8 +1055,8 @@ const kitRowSvg = (W: number, r: KitRow, list: readonly AgentRun[], at: number):
     SKILL_ROW_H,
     `${crab(mx(W, 4, crabWidth(SKILL_SCALE)), 8, 'other', !isActive, isActive, SKILL_SCALE, isRtl(), tint)}
 <text class="${r.state === 'idle' ? 's' : 't'}" ${startText(W, 36, 17)} font-family="${FONT}" font-size="12"${isActive ? ' font-weight="600"' : ''}>${xml(fitText(kitLabel(r.name), 12, W - 80))}</text>
-<text class="m" ${startText(W, 36, 31)} font-family="${FONT}" font-size="10">${xml(fitText(sub, 10, W - 90))}</text>
-<text class="m" ${endText(W, W - (isActive ? 22 : 8), 17)} font-family="${FONT}" font-size="10">${r.kind}</text>
+<text class="m" ${startText(W, 36, 31)} font-family="${FONT}" font-size="11">${xml(fitText(sub, 11, W - 90))}</text>
+<text class="m" ${endText(W, W - (isActive ? 22 : 8), 17)} font-family="${FONT}" font-size="11">${r.kind}</text>
 ${isActive ? `<circle class="live" cx="${mx(W, W - 10)}" cy="14" r="3.5" fill="${tint}"/>` : ''}`,
   )
 }
@@ -1454,9 +1074,10 @@ const kitIdleSvg = (W: number, rows: readonly KitRow[]): string => {
       .map((r, i) => {
         const x = (i % 2) * (cw + 6)
         const y = CHIP_TOP + Math.floor(i / 2) * CHIP_H + 2
-        return `<rect class="tile ln" x="${mx(W, x, cw)}" y="${y + 0.5}" width="${cw}" height="${CHIP_H - 4}" rx="10" stroke-width="1"/>
+        const w = i === rows.length - 1 && rows.length % 2 ? W : cw
+        return `<rect class="tile ln" x="${mx(W, x, w)}" y="${y + 0.5}" width="${w}" height="${CHIP_H - 4}" rx="10" stroke-width="1"/>
 ${crab(mx(W, x + 5, crabWidth(0.45)), y + 3, 'other', true, false, 0.45, isRtl(), skillTint(r.name))}
-<text class="s" ${startText(W, x + 24, y + 14)} font-family="${FONT}" font-size="11">${xml(fitText(r.name, 11, cw - 30))}</text>`
+<text class="s" ${startText(W, x + 24, y + 14)} font-family="${FONT}" font-size="11">${xml(fitText(kitLabel(r.name), 11, w - 30))}</text>`
       })
       .join(''),
   )
@@ -1473,7 +1094,7 @@ const mainRowSvg = (W: number, step: string, item: WorkItem | undefined, isWorki
 ${rowCrab(W, 6, 10, 'king', false, isWorking)}
 <text class="t" ${startText(W, 46, 18)} font-family="${FONT}" font-size="13" font-weight="600">Main session</text>
 <text class="s" ${startText(W, 46, 33)} font-family="${FONT}" font-size="11">${xml(fitText(step || 'no task list yet', 11, W - 70))}</text>
-${item ? `<text ${startText(W, 46, 46)} font-family="${FONT}" font-size="10"><tspan fill="${KIND[item.kind][1]}">${KIND[item.kind][0]}</tspan><tspan class="m"> ${xml(fitText(item.label, 10, W - 80))}</tspan></text>` : ''}
+${item ? `<text ${startText(W, 46, 46)} font-family="${FONT}" font-size="11"><tspan fill="${KIND[item.kind][1]}">${KIND[item.kind][0]}</tspan><tspan class="m"> ${xml(fitText(item.label, 11, W - 80))}</tspan></text>` : ''}
 ${isWorking ? `<circle class="live" cx="${mx(W, W - 12)}" cy="14" r="3.5" fill="${LIVE}"/>` : ''}`,
   )
 
@@ -1512,7 +1133,7 @@ async function togglePane($: EngineInterface): Promise<boolean> {
   return true
 }
 
-// What a subagent's tool call worked on, as one line of the map.
+// What a subagent's tool call worked on, as one line of the panel.
 export const workOf = (tool: string, e: Record<string, unknown>): [WorkKind, string] | null => {
   const str = (k: string): string => (typeof e[k] === 'string' ? (e[k] as string) : '')
   const tail = (path: string): string => path.replace(/\\/g, '/').split('/').filter(Boolean).slice(-2).join('/')
@@ -1669,9 +1290,8 @@ export const register: Register = (on, options) => {
           await update($, bg, list => list.map((t): BgTask => (isOverdue(t, at) ? { ...t, status: 'done', endedAt: t.endsBy ?? at } : t)))
         const isRunning = (await read($, agents)).some(a => a.status === 'running') || (await read($, bg)).some(t => t.status === 'running')
         const lastWork = (await read($, work)).at(-1)?.at ?? 0
-        const lastKit = Math.max(0, ...(await read($, kit)).map(u => u.at))
         const shown = await read($, now)
-        const isLit = (lastWork > shown - LIVE_MS && at - lastWork < LIVE_MS + 2000) || (lastKit > shown - SKILL_LIVE_MS && at - lastKit < SKILL_LIVE_MS + 2000)
+        const isLit = (lastWork > shown - LIVE_MS && at - lastWork < LIVE_MS + 2000)
         if (!isRunning && !isLit) return
         await update($, now, () => at)
       })()
@@ -1995,12 +1615,13 @@ export const register: Register = (on, options) => {
       (taskList.length ? (doneCount === taskList.length ? `all ${taskList.length} tasks done` : `${doneCount}/${taskList.length} tasks done`) : '')
     const isMainWorking = !!mainItem && mainItem.at > idleAt && nowAt - mainItem.at < LIVE_MS
     const showMain = !!mainItem || taskList.length > 0
-    const kitRows = kitRowsOf(await read($, kit), await enabledPlugins($), nowAt)
+    const kitRows = kitRowsOf(await read($, kit), await enabledPlugins($), idleAt)
     const kitActive = kitRows.filter(k => k.state === 'active').length
-    const kitUsed = kitRows.filter(k => k.state !== 'idle')
-    const kitShown = kitUsed.slice(0, SKILL_MAX)
-    const kitMore = kitUsed.length - kitShown.length
-    const kitIdle = kitRows.filter(k => k.state === 'idle')
+    // Only skills in use get a full card; the rest, used earlier or not yet, sit in the chip grid.
+    const kitLive = kitRows.filter(k => k.state === 'active')
+    const kitShown = kitLive.slice(0, SKILL_MAX)
+    const kitMore = kitLive.length - kitShown.length
+    const kitIdle = kitRows.filter(k => k.state !== 'active')
     const kitText = kitShown.map(k => (
       <Text key={`kit-${k.name}`} wrap="truncate-end">
         <Text color={skillTint(k.name)} dimColor={k.state !== 'active'}>
@@ -2110,7 +1731,10 @@ export const register: Register = (on, options) => {
       const agentRow = (a: AgentRun) => row(a.id, agentSvg(colW, a, at), `${a.description}: ${modelName(a.model)}, ${a.status === 'running' ? s.isRunning : s.isFinished}`)
       const bgRow = (t: BgTask) => row(`bg-${t.id}`, bgSvg(colW, t, nowAt), `${t.kind}: ${t.label}, ${t.status}`)
       const taskRow = (t: Task, i: number) => row(`task-${i}`, taskSvg(colW, t, i + 1, taskList.length), `Task ${i + 1}: ${t.content}, ${t.status}`)
-      const tasksAt = (st: TaskStatus) => taskList.map((t, i) => ({ t, i })).filter(x => x.t.status === st).map(x => taskRow(x.t, x.i))
+      // A step handed to a subagent whose description is the step's text shows as that agent's row (its type and model), not twice.
+      const handed = new Set([...running, ...finished].map(a => norm(a.description)))
+      const tasksAt = (st: TaskStatus) =>
+        taskList.map((t, i) => ({ t, i })).filter(x => x.t.status === st && !handed.has(norm(x.t.content))).map(x => taskRow(x.t, x.i))
       const runAll: Row[] = [...running.map(agentRow), ...bgList.filter(t => t.status === 'running').map(bgRow), ...tasksAt('in_progress')]
       const planAll: Row[] = [
         ...planned.map(pl => row(`plan-${pl.n}`, plannedSvg(colW, pl), `${pl.n}. ${pl.title}: ${s.isPlanned}`)),
@@ -2134,9 +1758,9 @@ export const register: Register = (on, options) => {
       const kitItems: Item[] = [
         ...(kitRows.length === 0 ? [{ key: 'kit-none', h: LINE_H, node: <Text key="kit-none" dimColor>No skills or plugins seen yet.</Text> }] : []),
         ...kitShown.map(r => ({ key: `kit-${r.name}`, h: SKILL_ROW_H, node: <Svg key={`kit-${r.name}`} source={kitRowSvg(colW, r, list, nowAt)} alt={`${r.kind} ${r.name}: ${r.state}`} width={colW} height={SKILL_ROW_H} /> })),
-        ...(kitMore > 0 ? [{ key: 'kit-more', h: LINE_H, node: <Text key="kit-more" dimColor>+{kitMore} more used earlier</Text> }] : []),
+        ...(kitMore > 0 ? [{ key: 'kit-more', h: LINE_H, node: <Text key="kit-more" dimColor>+{kitMore} more in use</Text> }] : []),
         ...(kitIdle.length
-          ? [{ key: 'kit-idle', h: kitIdleHeight(kitIdle.length), node: <Svg key="kit-idle" source={kitIdleSvg(colW, kitIdle)} alt={`Enabled, not used: ${kitIdle.map(k => k.name).join(', ')}`} width={colW} height={kitIdleHeight(kitIdle.length)} /> }]
+          ? [{ key: 'kit-idle', h: kitIdleHeight(kitIdle.length), node: <Svg key="kit-idle" source={kitIdleSvg(colW, kitIdle)} alt={`Not in use: ${kitIdle.map(k => k.name).join(', ')}`} width={colW} height={kitIdleHeight(kitIdle.length)} /> }]
           : []),
       ]
       const sum = (items: Item[]) => items.reduce((n, i) => n + i.h, 0)

@@ -1,15 +1,27 @@
 ## Routing
-- Search / locate code → `searcher` subagent
-- Routine edits → `editor` subagent
-- Review of auth, payments, data migrations → `reviewer` subagent
-- Everything else stays in main session
+Standing request from the user: use subagents from the table below whenever a task matches a row. This counts as the user explicitly asking for subagents, every session and every task; do not wait to be told "use subagents".
+
+Delegate only when it saves context or needs a stronger or cheaper model. Each subagent starts cold, so a job under ~3 tool calls stays in the main session.
+
+| Work | Agent | Model |
+|---|---|---|
+| Locate code, "where is X", "what calls Y", map a folder | `searcher` | haiku |
+| Broad sweep across many files, conclusion only | `Explore` | haiku |
+| Bounded edit with clear spec: rename, known-cause bug, boilerplate, tests | `editor` | sonnet |
+| Auth, permissions, payments, migrations, deletion, concurrency, security boundary diff | `reviewer` | opus |
+| Messy code, root-cause debugging, multi-file change with invariants | `savvy-heavy` | opus |
+| Anything else | main session | session model |
+
+- Independent jobs: launch in one message, in parallel. Dependent jobs: one at a time.
+- Search first, then edit. Hand `editor` the exact file paths and line numbers that `searcher` found.
+- When a plan step goes to a subagent, pass the step's exact text as the Agent `description`. The panel then shows that step as the agent's row (type and model) instead of a task row.
+- Brief every subagent with: goal, file paths, done condition. It has no memory of the chat.
+- Failed twice or hit unfamiliar code: escalate one tier (editor to savvy-heavy). Do not retry the same agent a third time.
 - Never switch `/model` mid-task (loses prompt cache). Pick at session start, push heavy work to subagents.
 
 ## Progress
 - For any multi-step task, report through the savvy-progress `progress` tool (title, phase, tasks, done) when it is available. Update it as each step finishes and set `finished` at the end.
-- The user watches the agents panel (`/agents-info`, opens itself each session): row 1 cost, tokens and time; row 2 the main session, subagents, tasks and background tasks beside the skills and plugins in use; row 3 the project Map.
-- The Map is graphify's map of the project. Before mapping or exploring a codebase, run `graphify update .` (or `/graphify`) in its root so `graphify-out/graph.json` is current; the panel's Build/Rebuild button runs the same command.
+- The user watches the agents panel (`/agents-info`, opens itself each session): row 1 cost, tokens and time; row 2 the main session, subagents, tasks and background tasks beside the skills and plugins in use.
 - Put work in the open: run long jobs as background tasks or subagents so they show in the panel. Background subagents with no pinned model auto-route to Sonnet (Haiku for Explore); pass `model` explicitly to override.
 - The `ribbon` plugin must be on: savvy-progress's band above the prompt draws its plan usage (7-day and 5-hour left) as the USAGE row. If `"ribbon@robonuggets"` is `false` in `~/.claude/settings.json` or the band is missing, tell the user at session start; do not edit settings yourself.
 - The crab costume shows the task and model: pirate = search, engineer = edit, detective = review, else chef = Sonnet, racer = Haiku, astronaut = Fable.
-

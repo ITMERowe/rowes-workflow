@@ -1,13 +1,25 @@
 # Rowe's Workflow
 
-Rowe's whole Claude Code workflow in one repository: one mod (plugin), three routing agents, and graphify for the project map.
+Rowe's whole Claude Code workflow in one repository: one mod (plugin) and three routing agents.
 
 | Part | What it does |
 | --- | --- |
-| `plugins/savvy-progress` | The band above the prompt, the agents panel (`/agents-info`) with its project map, and model routing for background agents. |
+| `plugins/savvy-progress` | The band above the prompt, the agents panel (`/agents-info`), and model routing for background agents. |
 | `agents/` | `searcher`, `editor` and `reviewer` subagents, each pinned to a model tier. |
-| `CLAUDE.md.snippet` | The "Routing" and "Progress" rules that tell Claude when to use each agent, tool and graphify. |
-| `install.ps1` | Copies `agents/*.md` to `~/.claude/agents` and prints the snippet for you to paste. |
+| `CLAUDE.md.snippet` | The "Routing" and "Progress" rules that tell Claude when to use each agent and tool. |
+| `install.ps1`, `install.sh` | Copy `agents/*.md` to `~/.claude/agents` and print the snippet for you to paste (Windows, macOS/Linux). |
+
+## Quick install
+
+```
+/plugin install savvy-progress --marketplace ITMERowe/rowes-workflow
+```
+
+```bash
+git clone https://github.com/ITMERowe/rowes-workflow && cd rowes-workflow && sh install.sh
+```
+
+On Windows run `./install.ps1` instead of `sh install.sh`. Paste the printed snippet into `~/.claude/CLAUDE.md`, then run `/reload-plugins`. Details are under [Install](#install).
 
 ## The band above the prompt
 
@@ -25,19 +37,20 @@ The band stands in for ribbon's and ponytail's own rows, so nothing shows twice.
 `/agents-info` toggles the panel; `/agents-info open` opens it without toggling.
 
 1. **Row 1:** cost, tokens and time for the session's subagents.
-2. **Row 2, left:** the main session (its current task-list step and last action), running, finished and planned subagents, the task list, and background tasks (small crabs, one colour each).
-3. **Row 2, right:** skills and plugins. Active ones (used in the last 5 minutes) first, then ones used earlier, then enabled plugins not used yet. Each has its own crab colour, apart from subagents and background tasks.
-4. **Row 3, the Map:** graphify's map of the project. Each card is a community of code (its files and symbols, a bar of files edited this session), linked where the code calls across. A crab sits on the card each agent, subagent and background task is working in; commands, web and searches sit on "Terminal & web". The **Build project map** / **Rebuild map** button runs `graphify update .`.
+2. **Row 2, left:** the main session (its current task-list step and last action), running, finished and planned subagents, the task list, and background tasks (small crabs, one colour each). A task-list step handed to a subagent whose description is the step's exact text shows once, as that agent's row.
+3. **Row 2, right:** skills and plugins. Ones used since the main session's last turn ended get a full card; the rest (used earlier, or enabled and not used yet) sit in a chip grid. Each has its own crab colour, apart from subagents and background tasks.
 
-On a narrow pane row 2 stacks into one column. Tools: `mcp__savvy-progress__progress` (the main session reports a flow) and `mcp__savvy-progress__step` (a worker reports its steps). `routeModel`: a background subagent with no pinned model runs on Sonnet (Haiku for `Explore`); agents in its `PINNED` set (`searcher`, `editor`, `reviewer`) and `savvy-*` workers keep their own model.
+Each card scrolls on its own under the wheel. On a narrow pane row 2 stacks into one column. Tools: `mcp__savvy-progress__progress` (the main session reports a flow) and `mcp__savvy-progress__step` (a worker reports its steps). `routeModel`: a background subagent with no pinned model runs on Sonnet (Haiku for `Explore`); agents in its `PINNED` set (`searcher`, `editor`, `reviewer`) and `savvy-*` workers keep their own model.
 
 ## Routing
 
 | Task | Agent | Model |
 | --- | --- | --- |
 | Search or locate code | `searcher` | Haiku, low effort |
+| Broad sweep across many files, conclusion only | `Explore` (built in) | Haiku |
 | Routine edits | `editor` | Sonnet, medium effort |
-| Review of auth, payments, data migrations | `reviewer` | Opus, high effort |
+| Review of auth, permissions, payments, migrations, deletion, concurrency | `reviewer` | Opus, high effort |
+| Messy code, root-cause debugging, multi-file change | `savvy-heavy` (savvy-flow) | Opus |
 | Everything else | main session | the session's model |
 
 ### Why the agents are not plugin agents
@@ -62,7 +75,7 @@ Each subagent in the panel is a crab dressed for its task and model:
 - Claude Code with mods (plugins with a hooks module).
 - The `ponytail` plugin (marketplace `DietrichGebert/ponytail`).
 - The `ribbon` plugin (marketplace `robonuggets/ribbon`) for the USAGE row.
-- graphify for the Map: `pip install graphifyy`, then `graphify update .` in the project root (or the panel's Build button). It writes `graphify-out/`, which this repo ignores.
+- Optional: the `savvy-flow` plugin (marketplace `JohnnyVizz/claude-kit`) for the `savvy-*` workers the routing rules name.
 
 ## Install
 
@@ -71,23 +84,47 @@ Make sure no other copy of savvy-progress is loaded (for example `savvy-progress
 1. At the prompt of a terminal session, install the plugin. Answer `y` to add the marketplace, then pick a scope.
 
    ```
-   /plugin install savvy-progress --marketplace <owner>/rowes-workflow
+   /plugin install savvy-progress --marketplace ITMERowe/rowes-workflow
    ```
 
    From a shell instead:
 
    ```bash
-   claude plugin install savvy-progress --marketplace <owner>/rowes-workflow
+   claude plugin install savvy-progress --marketplace ITMERowe/rowes-workflow
    ```
 
-2. Clone this repository and run the installer from its folder:
+2. Clone this repository and run the installer from its folder. It backs up any agent file it replaces as `<name>.md.bak`.
+
+   ```bash
+   git clone https://github.com/ITMERowe/rowes-workflow
+   ```
+
+   Windows (PowerShell):
 
    ```powershell
    ./install.ps1
    ```
 
+   macOS or Linux:
+
+   ```bash
+   sh install.sh
+   ```
+
 3. Paste the snippet it prints into `~/.claude/CLAUDE.md`.
 4. Run `/reload-plugins` or start a new session.
+
+## Developing
+
+From `plugins/savvy-progress`, after each change:
+
+```bash
+claude plugin validate .
+```
+
+```bash
+claude plugin test .
+```
 
 ## License
 
