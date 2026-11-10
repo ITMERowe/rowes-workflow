@@ -9,11 +9,15 @@ Two Claude Code plugins. Use one, or both:
 
 <p align="center"><img src="docs/crew.svg" alt="The crab crew: Tactician, Pathfinder, Ritualist, Martial Artist, Gladiator, Stormweaver, Chronomancer and Exile, each acting out its job" width="880"></p>
 
-```bash
-git clone https://github.com/ITMERowe/rowes-workflow && cd rowes-workflow && sh install.sh
+Install in Claude Code with three commands:
+
+```
+/plugin marketplace add ITMERowe/rowes-workflow
+/plugin install auto-route@rowes-workflow
+/plugin install band@rowes-workflow
 ```
 
-On Windows, run `./install.ps1` instead of `sh install.sh`.
+Run them one at a time, then `/reload-plugins`. To install from your terminal or with the full installer, see [Install](#install).
 
 ---
 
@@ -73,7 +77,51 @@ The shell colour shows the model: Haiku grey, Sonnet blue, Opus yellow, Fable or
 
 ## Install
 
-You need Claude Code with plugin support, with `claude` on your PATH.
+You need Claude Code with plugin support. There are three ways to install. Pick one.
+
+### In Claude Code
+
+Type these at the Claude Code prompt (terminal, desktop app or IDE):
+
+```
+/plugin marketplace add ITMERowe/rowes-workflow
+```
+
+```
+/plugin install auto-route@rowes-workflow
+```
+
+```
+/plugin install band@rowes-workflow
+```
+
+```
+/reload-plugins
+```
+
+Leave out either install line to skip that plugin. You can also run `/plugin` alone, open **Marketplaces**, and pick from the list.
+
+Or ask Claude: *"Install auto-route and band from the ITMERowe/rowes-workflow plugin marketplace."*
+
+### From your terminal
+
+```bash
+claude plugin marketplace add ITMERowe/rowes-workflow
+```
+
+```bash
+claude plugin install auto-route@rowes-workflow
+```
+
+```bash
+claude plugin install band@rowes-workflow
+```
+
+Then start Claude Code, or run `/reload-plugins` in a session that is already open.
+
+### The whole workflow, with the installer
+
+This also adds the companion plugins listed under [What the installer adds](#what-the-installer-adds). You need `claude` on your PATH.
 
 1. Clone the repository and run the installer:
 
@@ -98,17 +146,7 @@ You need Claude Code with plugin support, with `claude` on your PATH.
 
 The installer adds every plugin in [`plugins.txt`](plugins.txt). A plugin that fails to install is reported, and the installer carries on with the rest. To skip a plugin, delete its line first.
 
-To install only auto-route:
-
-```bash
-claude plugin marketplace add ITMERowe/rowes-workflow
-```
-
-```bash
-claude plugin install auto-route@rowes-workflow
-```
-
-### What the installer adds
+#### What the installer adds
 
 | Plugin | From | Why |
 | --- | --- | --- |

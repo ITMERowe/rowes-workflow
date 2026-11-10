@@ -19,8 +19,23 @@ A model-routing plugin for Claude Code. It works on its own: no other plugin is 
 
 ## Install
 
+In Claude Code (terminal, desktop app or IDE):
+
+```
+/plugin marketplace add ITMERowe/rowes-workflow
+```
+
+```
+/plugin install auto-route@rowes-workflow
+```
+
+From your terminal:
+
 ```bash
 claude plugin marketplace add ITMERowe/rowes-workflow
+```
+
+```bash
 claude plugin install auto-route@rowes-workflow
 ```
 

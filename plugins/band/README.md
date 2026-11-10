@@ -46,6 +46,18 @@ Set them in `/config`. For a plugin loaded by hand, set them in `~/.claude/setti
 
 ## Install
 
+In Claude Code (terminal, desktop app or IDE):
+
+```
+/plugin marketplace add ITMERowe/rowes-workflow
+```
+
+```
+/plugin install band@rowes-workflow
+```
+
+From your terminal:
+
 ```bash
 claude plugin marketplace add ITMERowe/rowes-workflow
 ```
@@ -53,6 +65,8 @@ claude plugin marketplace add ITMERowe/rowes-workflow
 ```bash
 claude plugin install band@rowes-workflow
 ```
+
+Then run `/reload-plugins`.
 
 band needs ribbon and ponytail, and Claude Code installs them along with it. The full setup is in the [repository README](../../README.md).
 
