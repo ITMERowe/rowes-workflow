@@ -1,5 +1,5 @@
 ## Routing
-The auto-route plugin (rowes-workflow) holds the routing model: it adds the agent table and rules to the main session's system prompt, and an `auto-route:` note to each prompt naming the row and skills that fit. Edit the table in `plugins/auto-route/hooks/register.ts`. If auto-route is off, route by the agent descriptions.
+The auto-route plugin holds the routing model and its agents (`auto-route:*`): it adds the agent table and rules to the main session's system prompt, and an `auto-route:` note to each prompt naming the row and skills that fit. Edit the table in `plugins/auto-route/hooks/register.ts`. If auto-route is off, route by the agent descriptions.
 
 ## Progress
 - For any multi-step task, report through the savvy-progress `progress` tool (title, phase, tasks, done) when it is available. Update it as each step finishes and set `finished` at the end.

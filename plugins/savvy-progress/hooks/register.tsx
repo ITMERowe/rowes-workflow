@@ -26,10 +26,10 @@ const windows = atom({ plugin: 'ribbon', key: 'windows' } as const, [])
 type UsageWindow = { kind: string; percentUsed: number; resetsAt?: string }
 
 // Background subagents with no model of their own run on a cheap one. Types that pin their
-// own model (searcher, reader, editor, reviewer, savvy-*) and forks keep theirs.
+// own model (searcher, reader, editor, reviewer, savvy-*, auto-route:*) and forks keep theirs.
 const PINNED = new Set(['searcher', 'reader', 'editor', 'reviewer'])
 function routeModel<T extends { background: boolean; fork: boolean; model?: string; subagentType: string; parentModel: string }>(e: T): T {
-  if (!e.background || e.fork || e.model || PINNED.has(e.subagentType) || e.subagentType.startsWith('savvy-')) return e
+  if (!e.background || e.fork || e.model || PINNED.has(e.subagentType) || /^(savvy-|auto-route:)/.test(e.subagentType)) return e
   if (/haiku/i.test(e.parentModel)) return e
   return { ...e, model: e.subagentType === 'Explore' ? 'haiku' : 'sonnet' }
 }

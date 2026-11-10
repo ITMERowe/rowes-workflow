@@ -1,6 +1,6 @@
 {
   "name": "auto-route",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Reads each prompt and tells Claude which subagent model and which skills fit it: reading a guide or post goes to the Haiku reader.",
   "author": { "name": "ITMERowe" },
   "license": "MIT"

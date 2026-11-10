@@ -9,19 +9,19 @@ test('reading a guide or link routes to the reader; changing code does not', () 
 })
 
 test('every routing row is picked by its kind of ask', () => {
-  const pick = (t: string) => routeFor(t)?.agent
-  expect(pick('use fable on this bug')).toBe('savvy-fable')
+  const pick = (t: string) => routeFor(t)?.agent.replace('auto-route:', '')
+  expect(pick('use fable on this bug')).toBe('fable')
   expect(pick('add a permission check to the login route')).toBe('reviewer')
-  expect(pick('find the root cause of the crash')).toBe('savvy-heavy')
+  expect(pick('find the root cause of the crash')).toBe('heavy')
   expect(pick('summarize this post https://example.com')).toBe('reader')
   expect(pick('where is the band drawn?')).toBe('searcher')
-  expect(pick('map the repo for me')).toBe('Explore')
+  expect(pick('map the repo for me')).toBe('explore')
   expect(pick('rename crab to sprite')).toBe('editor')
   expect(pick('hello there')).toBeUndefined()
 })
 
 test('the rules hold the whole table', () => {
-  for (const a of ['savvy-fable', 'reviewer', 'savvy-heavy', 'reader', 'searcher', 'Explore', 'editor', 'main session']) expect(RULES).toContain(a)
+  for (const a of ['fable', 'reviewer', 'heavy', 'reader', 'searcher', 'explore', 'editor'].map(a => 'auto-route:' + a).concat('main session')) expect(RULES).toContain(a)
 })
 
 test('skills are picked from the ask, at most three', () => {
@@ -34,7 +34,7 @@ test('the note rides along as context', async ($, on) => {
   const seen: (readonly string[] | undefined)[] = []
   on('prompt.submit', (_, e) => { seen.push(e.context); return { text: e.text, context: e.context } })
   await $.prompt.submit({ text: 'summarize this post https://example.com', wait: false } as never)
-  expect(seen[0]?.join('\n')).toContain('`reader` subagent')
+  expect(seen[0]?.join('\n')).toContain('`auto-route:reader` subagent')
 })
 
 test('the routing table reaches only a prompt that can delegate', async ($, on) => {
