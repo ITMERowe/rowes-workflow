@@ -10,14 +10,23 @@ Run these in Claude Code, one at a time:
 
 ```
 /plugin marketplace add ITMERowe/rowes-workflow
+```
+
+```
 /plugin install auto-route@rowes-workflow
+```
+
+```
 /plugin install band@rowes-workflow
+```
+
+```
 /reload-plugins
 ```
 
 Each plugin works on its own, so you can install just one. To install from a terminal, run the same commands as `claude plugin marketplace add …` and `claude plugin install …`.
 
-## 🧭 auto-route: the right model for every job
+## auto-route: the right model for every job
 
 - **Seven ready-made agents.** Search and reading run on **Haiku**, edits on **Sonnet**, and risky reviews and hard debugging on **Opus**. **Fable** runs only when you ask for it.
 - **Routing without asking.** Every session gets the routing rules. Every prompt gets a hidden note naming the agent and the skills that fit it.
@@ -34,7 +43,7 @@ Each plugin works on its own, so you can install just one. To install from a ter
 
 [How to change the routing →](plugins/auto-route/README.md)
 
-## 🦀 band: your crew, live
+## band: your crew, live
 
 - **The band** above the prompt shows plan progress and the usage left in your 5-hour and 7-day windows.
 - **The crew panel** (`/agents-info`) shows every agent with its model, cost and tokens. Hover over a figure to see where it came from, and click a row to see its tool calls.
