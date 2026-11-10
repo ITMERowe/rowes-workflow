@@ -47,3 +47,10 @@ test('desktop: the cost and tokens tiles reveal their breakdown on hover, with n
   }
   expect(await ui.find({ type: 'Text', text: /summed over every model request/ })).toBeTruthy()
 })
+
+test('desktop: the main session row shows even before any task or tool call', async ($, on) => {
+  mock.clock(on)
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  const ui = await $.ui.mount({ plugin: 'savvy-progress', surface: 'desktop', component: 'Pane', requestId: 'savvy-agents', props: pane })
+  expect((await ui.findAll({ type: 'Svg' })).some(el => String(el.props.alt).startsWith('Main session'))).toBe(true)
+})

@@ -587,6 +587,7 @@ const costOf = (model: string, u: Usage, isRequest: boolean): number => costPart
 
 // One more model request added to a split.
 export const addRequest = (s: Split, model: string, u: Usage): Split => ({
+  model,
   requests: s.requests + 1,
   tokens: addQuad(s.tokens, quadOf(u)),
   usd: addQuad(s.usd, costParts(model, u, true)),
@@ -1263,13 +1264,14 @@ ${crab(mx(W, x + 5, crabWidth(0.45)), y + 3, 'other', true, false, 0.45, isRtl()
 // The main session as a row beside its subagents: what it is on (the task list's current
 // step) and the last thing it did.
 const MAIN_ROW_H = 62
-const mainRowSvg = (W: number, step: string, item: WorkItem | undefined, isWorking: boolean): string =>
+// The main session's row, always shown: the Tactician in its model's shell, with the model named.
+const mainRowSvg = (W: number, step: string, item: WorkItem | undefined, isWorking: boolean, model?: string): string =>
   svg(
     W,
     MAIN_ROW_H,
     `<rect class="tile ln" x="0.5" y="0.5" width="${W - 1}" height="${MAIN_ROW_H - 10}" rx="10" stroke-width="1"/>
-${rowCrab(W, 6, 10, 'king', false, isWorking)}
-<text class="t" ${startText(W, 46, 18)} font-family="${FONT}" font-size="13" font-weight="600">Main session</text>
+${rowCrab(W, 6, 10, 'king', false, isWorking, model ? modelTint(model) : undefined)}
+<text ${startText(W, 46, 18)} font-family="${FONT}" font-size="13"><tspan class="t" font-weight="600">Main session</tspan>${model ? `<tspan class="s">  ·  ${xml(modelName(model))}</tspan>` : ''}</text>
 <text class="s" ${startText(W, 46, 33)} font-family="${FONT}" font-size="11">${xml(fitText(step || 'no task list yet', 11, W - 70))}</text>
 ${item ? `<text ${startText(W, 46, 46)} font-family="${FONT}" font-size="11"><tspan fill="${KIND[item.kind][1]}">${KIND[item.kind][0]}</tspan><tspan class="m"> ${xml(fitText(item.label, 11, W - 80))}</tspan></text>` : ''}
 ${isWorking ? `<circle class="live" cx="${mx(W, W - 12)}" cy="14" r="3.5" fill="${LIVE}"/>` : ''}`,
@@ -1808,7 +1810,6 @@ export const register: Register = (on, options) => {
       taskList.find(t => t.status === 'in_progress')?.content ??
       (taskList.length ? (doneCount === taskList.length ? `all ${taskList.length} tasks done` : `${doneCount}/${taskList.length} tasks done`) : '')
     const isMainWorking = !!mainItem && mainItem.at > idleAt && nowAt - mainItem.at < LIVE_MS
-    const showMain = !!mainItem || taskList.length > 0
     const kitRows = kitRowsOf(await read($, kit), await enabledPlugins($), idleAt)
     const kitActive = kitRows.filter(k => k.state === 'active').length
     // Only skills in use get a full card; the rest, used earlier or not yet, sit in the chip grid.
@@ -1988,9 +1989,7 @@ export const register: Register = (on, options) => {
       const doneAll: Row[] = [...finished.map(agentRow), ...bgList.filter(t => t.status !== 'running').map(bgRow), ...tasksAt('completed')]
 
       const crewItems: Item[] = [
-        ...(showMain
-          ? [{ key: 'main', h: MAIN_ROW_H, node: <Svg key="main" source={mainRowSvg(colW, mainStep, mainItem, isMainWorking)} alt={`Main session: ${mainStep}`} width={colW} height={MAIN_ROW_H} /> }]
-          : []),
+        { key: 'main', h: MAIN_ROW_H, node: <Svg key="main" source={mainRowSvg(colW, mainStep, mainItem, isMainWorking, split.model)} alt={`Main session${split.model ? `, ${modelName(split.model)}` : ''}: ${mainStep}`} width={colW} height={MAIN_ROW_H} /> },
         ...(isEmpty ? [{ key: 'empty', h: LINE_H, node: <Text key="empty" dimColor>{s.empty}</Text> }] : []),
         // Subagents, background jobs and tasks share the sections: only running or not sets them apart.
         ...(runAll.length ? [sectionHead('run', s.running, String(runAll.length))] : []),
@@ -2199,11 +2198,10 @@ export const register: Register = (on, options) => {
           </Text>
         ) : (
           <Box flexDirection="column" marginTop={1}>
-            {showMain && (
-              <Text wrap="truncate-end">
-                <Text color={CLAY}>▣</Text> <Text bold>Main session</Text> <Text dimColor>{mainStep || (mainItem ? `${KIND[mainItem.kind][0]} ${mainItem.label}` : '')}</Text>
-              </Text>
-            )}
+            <Text wrap="truncate-end">
+              <Text color={CLAY}>▣</Text> <Text bold>Main session</Text>
+              {split.model ? <Text dimColor>{` · ${modelName(split.model)}`}</Text> : null} <Text dimColor>{mainStep || (mainItem ? `${KIND[mainItem.kind][0]} ${mainItem.label}` : '')}</Text>
+            </Text>
             {isEmpty && <Text dimColor>{s.empty}</Text>}
             {running.length > 0 && <Text dimColor>{s.running} · {running.length}</Text>}
             {running.map(row)}

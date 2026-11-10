@@ -20,7 +20,7 @@ export type Flow = {
 export type Quad = [number, number, number, number]
 
 /** Model requests summed by token kind, with the estimated cost of each kind. */
-export type Split = { requests: number; tokens: Quad; usd: Quad }
+export type Split = { requests: number; tokens: Quad; usd: Quad; /** The model of the last request. */ model?: string }
 
 export type AgentStatus = 'running' | 'done' | 'failed'
 
