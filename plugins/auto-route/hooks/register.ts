@@ -42,7 +42,7 @@ ${ROUTES.map(r => `| ${r.work} | \`${r.agent}\` | ${r.model} |`).join('\n')}
 // A prompt that only asks to read something: a link or a guide, post or doc, and no word that changes code.
 const READ_VERB = /\b(read|summari[sz]e|tl;?dr|skim|explain|what does|what's in|go through|check out|look at)\b/i
 const READ_THING = /https?:\/\/|\b(guide|post|article|blog|docs?|documentation|thread|reel|video|page|link|paper|readme|changelog|tweet)\b/i
-const CHANGE = /\b(fix|edit|implement|build|refactor|change|add|remove|delete|rename|commit|push|write|create|install|update|migrate|deploy|make)\b/i
+const CHANGE = /\b(fix|edit|implement|build|refactor|change|add|remove|delete|rename|commit|push|write|rewrite|rework|redo|improve|clean|tweak|polish|create|install|update|migrate|deploy|make)\b/i
 
 // shortcut: a fixed keyword table, not the session's live skill list; names a skill that is off are skipped by Claude.
 const SKILLS: [RegExp, string][] = [
@@ -65,8 +65,8 @@ const SKILLS: [RegExp, string][] = [
 export const isReadOnly = (text: string): boolean => READ_VERB.test(text) && READ_THING.test(text) && !CHANGE.test(text)
 
 /** The routing row a prompt matches, or undefined for the main session. */
-export const routeFor = (text: string): Route | undefined =>
-  ROUTES.find(r => (r.agent === A('reader') ? isReadOnly(text) : r.test?.test(text)))
+export const routeFor = (text: string, rows: readonly Route[] = ROUTES): Route | undefined =>
+  rows.find(r => (r.agent === A('reader') ? isReadOnly(text) : r.test?.test(text)))
 
 export const skillsFor = (text: string): string[] => SKILLS.filter(([re]) => re.test(text)).map(([, s]) => s).slice(0, 3)
 
@@ -86,10 +86,13 @@ export const modelFor = (label: string | undefined, context: number, limits: { h
   return undefined
 }
 
+const READ_ONLY_ROWS = new Set([A('searcher'), A('explore'), A('reader')])
+
 /** The routing note for one prompt, or undefined when nothing fits. */
 export const routeNote = (text: string): string | undefined => {
   const lines: string[] = []
-  const r = isQuestion(text) ? undefined : routeFor(text)
+  // A question asks about work, not for it: it may still go to a read-only agent, never to one that changes code.
+  const r = routeFor(text, isQuestion(text) ? ROUTES.filter(x => READ_ONLY_ROWS.has(x.agent)) : ROUTES)
   if (r?.agent === A('reader'))
     lines.push('auto-route: this ask only reads a guide, post or link. Hand the reading to the `auto-route:reader` subagent (haiku) with the link or path and what to pull out, then relay its summary. Read it yourself only if it is one short local file.')
   else if (r)

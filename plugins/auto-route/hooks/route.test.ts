@@ -81,3 +81,13 @@ test('a chat question runs its turn on Haiku once the context size is known', as
   await step('t3')
   expect(models).toEqual(['caveman-auto', 'claude-haiku-5-5', 'caveman-auto'])
 })
+
+test('the README examples route where it says', () => {
+  const note = (t: string) => routeNote(t) ?? ''
+  expect(note('where is the login handler?')).toContain('auto-route:searcher')
+  expect(note('summarize this post')).toContain('auto-route:reader')
+  expect(note('rename these 40 files')).toContain('auto-route:editor')
+  expect(note('review the payment migration')).toContain('auto-route:reviewer')
+  expect(note('find the root cause of the flaky build')).toContain('auto-route:heavy')
+  expect(note('rework the readme so it is easier to read')).not.toContain('auto-route:reader')
+})
