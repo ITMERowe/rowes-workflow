@@ -97,3 +97,11 @@ test('every costume takes any shell: a tint leaves no clay behind, and the worki
     expect(/class="(f2|q2)"/.test(svg)).toBe(true)
   }
 })
+
+test('casters float with particles; the others stay on the ground', () => {
+  for (const costume of ['light', 'heavy', 'fable']) {
+    const svg = crab(0, 0, costume, false, true)
+    for (const q of ['q1', 'q2', 'q3', 'q4']) expect(svg.includes(`class="${q}"`)).toBe(true)
+  }
+  expect(crab(0, 0, 'medium', false, true).includes('class="q1"')).toBe(false)
+})

@@ -714,13 +714,23 @@ const CRAB_CSS = `<style>
 .run .q1,.run .q2,.run .q3,.run .q4{animation:q 1s steps(1) infinite}
 .run .q2{animation-delay:-.75s}.run .q3{animation-delay:-.5s}.run .q4{animation-delay:-.25s}
 @keyframes q{0%{opacity:1}25%,100%{opacity:0}}
-.c-king.run .la,.c-king.run .lb,.c-king.run .bd,.c-light.run .la,.c-light.run .lb,.c-light.run .bd,.c-heavy.run .la,.c-heavy.run .lb,.c-heavy.run .bd{animation:none}
+.c-king.run .la,.c-king.run .lb,.c-king.run .bd{animation:none}
 .c-king.run .f1,.c-king.run .f2{animation-duration:1s}
-.c-fable.run{animation:float 1s steps(2) infinite}
-.c-fable.run .la,.c-fable.run .lb,.c-fable.run .bd{animation:none}
+.c-fable.run,.c-light.run,.c-heavy.run{animation:float 1s steps(2) infinite}
+.c-fable.run .la,.c-fable.run .lb,.c-fable.run .bd,.c-light.run .la,.c-light.run .lb,.c-light.run .bd,.c-heavy.run .la,.c-heavy.run .lb,.c-heavy.run .bd{animation:none}
 @keyframes float{50%{transform:translateY(-2px)}}
 @media (prefers-reduced-motion: reduce){.run,.run g{animation:none!important}}
 </style>`
+
+// A caster's particles: frame k (q1..q4) lights the points in spots[k], the first of each in
+// `bright`, the rest in `dim`, each with a dim pixel trailing below it.
+const motes = (f: Fill, spots: [number, number][][], bright: string, dim: string): void =>
+  spots.forEach((pts, k) =>
+    pts.forEach(([x, y], i) => {
+      f(x, y, 1, 1, i === 0 ? bright : dim, `q${k + 1}`)
+      if (y + 1 < 28) f(x, y + 1, 1, 1, dim, `q${k + 1}`)
+    }),
+  )
 
 // The eyes' glint, moved a pixel to show where the crab looks.
 const glance = (f: Fill, dx: number, dy: number, cls: string): void => {
@@ -730,8 +740,8 @@ const glance = (f: Fill, dx: number, dy: number, cls: string): void => {
 
 // Path of Exile and Path of Exile 2 ascendancies, one per role: original pixel art after each one's
 // portrait. Motion is sprite frames: `f1`/`f2` swap every half second, `q1`..`q4` step through four
-// quarters of a second; the first frame shows at rest. Casters and the planner stand still while
-// they work. Each costume keeps its own palette and never paints CLAY (only a claw that moves with
+// quarters of a second; the first frame shows at rest. Casters float while they work, with particles
+// of their school around them; the planner stands still. Each costume keeps its own palette and never paints CLAY (only a claw that moves with
 // the frames does), so any shell tint fits any costume, whatever the routing.
 const COSTUMES: Record<string, (f: Fill) => void> = {
   // King: Tactician, the main session. Shaggy brown hair, a campaign map held in both claws; the eyes
@@ -763,6 +773,8 @@ const COSTUMES: Record<string, (f: Fill) => void> = {
     stamp(f, 23, 3, ['..r..', '.r.r.', 'r.r.r', '.r.r.', '..r..'], { r: '#5FD0FF' }, 'f1')
     stamp(f, 23, 3, ['r.r.r', '.rrr.', 'rr.rr', '.rrr.', 'r.r.r'], { r: '#9FE6FF' }, 'f2')
     f(14, 16, 2, 2, '#9FE6FF', 'f2')
+    // Rune motes drift up both sides.
+    motes(f, [[[2, 19], [28, 21]], [[2, 16], [28, 18]], [[1, 13], [29, 15]], [[2, 10], [28, 12]]], '#5FD0FF', '#3E6FB0')
   },
   // Medium: Gladiator. A crested bronze helm and a buckler; the sword is raised, then swung through.
   medium: f => {
@@ -795,6 +807,8 @@ const COSTUMES: Record<string, (f: Fill) => void> = {
     f(24, 8, 1, 1, '#C9A8FF', 'f1'); f(27, 7, 1, 1, '#C9A8FF', 'f1'); f(26, 5, 1, 1, '#9B6BFF', 'f1')
     stamp(f, 24, 0, ['..b', '..b', '.b.', '.b.', '..b', '...b', '..b', '.b.', '.b.'], { b: '#F1E6FF' }, 'f2')
     f(23, 9, 1, 1, '#9B6BFF', 'f2'); f(28, 9, 1, 1, '#9B6BFF', 'f2'); f(28, 3, 1, 1, '#9B6BFF', 'f2')
+    // Static crackles at a new spot each quarter second.
+    motes(f, [[[1, 9], [5, 22]], [[3, 6], [28, 18]], [[0, 15], [27, 22]], [[4, 3], [29, 15]]], '#E3D2FF', '#7A4FD0')
   },
   // Fable: Chronomancer. Silver hair under a dark circlet; floats, a clock face over the raised claw
   // with its hand sweeping round each second.
@@ -804,6 +818,8 @@ const COSTUMES: Record<string, (f: Fill) => void> = {
     stamp(f, 23, 1, ['..ccc..', '.c...c.', 'c.....c', 'c.....c', 'c.....c', '.c...c.', '..ccc..'], { c: '#9FD3FF' })
     f(26, 4, 1, 1, '#C9A227')
     f(26, 2, 1, 2, '#E6F0FF', 'q1'); f(27, 4, 2, 1, '#E6F0FF', 'q2'); f(26, 5, 1, 2, '#E6F0FF', 'q3'); f(24, 4, 2, 1, '#E6F0FF', 'q4')
+    // Motes of time circle the crab, a quarter turn each quarter second.
+    motes(f, [[[12, 2], [17, 26]], [[28, 17], [1, 9]], [[17, 26], [12, 2]], [[1, 9], [28, 17]]], '#E8C55A', '#9FD3FF')
   },
   // Other: the Exile, washed ashore in rags, for tasks, skills, background jobs and any agent no class
   // fits; the loose ends flap.
