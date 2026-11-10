@@ -56,9 +56,9 @@ The table and keywords are in one file you can edit: see [auto-route's README](p
 - **Every worker:** the main session, subagents, the task list and background jobs. Click a row to list the tool calls it made.
 - **Skills and plugins:** the ones in use right now, and the rest of your kit.
 
-**The crab crew.** Each worker is a pixel crab dressed as a Path of Exile ascendancy, and it acts out its job while it runs:
+**The crab crew.** Each worker is a pixel crab in a class costume, and it acts out its job while it runs:
 
-| Ascendancy | Worn by | While working |
+| Class | Worn by | While working |
 | --- | --- | --- |
 | Tactician | The main session | Reads a campaign map, the mark moving to the next objective |
 | Pathfinder | Search (`searcher`, `explore`) | Walks and looks one way, then the other |
@@ -69,7 +69,7 @@ The table and keywords are in one file you can edit: see [auto-route's README](p
 | Chronomancer | Anything else on Fable | Floats, turning a clock |
 | Exile | Tasks, skills, background jobs | Rags flap |
 
-The shell colour shows the model, like an item's rarity: Haiku Normal (grey), Sonnet Magic (blue), Opus Rare (yellow), Fable Unique (orange). Any costume takes any shell, so your own routing still reads at a glance.
+The shell colour shows the model: Haiku grey, Sonnet blue, Opus yellow, Fable orange. Any costume takes any shell, so your own routing still reads at a glance.
 
 ## Install
 

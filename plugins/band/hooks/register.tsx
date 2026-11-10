@@ -739,8 +739,7 @@ const glance = (f: Fill, dx: number, dy: number, cls: string): void => {
   f(19 + dx, 12 + dy, 1, 1, '#FFFFFF', cls)
 }
 
-// Path of Exile and Path of Exile 2 ascendancies, one per role: original pixel art after each one's
-// portrait. Motion is sprite frames: `f1`/`f2` swap every half second, `q1`..`q4` step through four
+// One class costume per role, original pixel art. Motion is sprite frames: `f1`/`f2` swap every half second, `q1`..`q4` step through four
 // quarters of a second; the first frame shows at rest. Casters float while they work, with particles
 // of their school around them; the planner stands still. Each costume keeps its own palette and never paints CLAY (only a claw that moves with
 // the frames does), so any shell tint fits any costume, whatever the routing.
@@ -908,14 +907,14 @@ const crabWidth = (scale: number): number => Math.round(CRAB_BOX * scale * 100) 
 const rowCrab = (W: number, x: number, y: number, costume: string, dim = false, isWalking = false, tint?: string): string =>
   crab(mx(W, x, crabWidth(CRAB_SCALE)), y, costume, dim, isWalking, CRAB_SCALE, isRtl(), tint)
 
-// The crab's shell by model, as an item's rarity: Haiku Normal, Sonnet Magic, Opus Rare, Fable Unique.
-const RARITY: [RegExp, string][] = [
+// The crab's shell colour by model: Haiku grey, Sonnet blue, Opus yellow, Fable orange.
+const SHELL_TINT: [RegExp, string][] = [
   [/fable|mythos/i, '#C27A2E'],
   [/opus/i, '#E6CC3E'],
   [/sonnet/i, '#7B7BF0'],
   [/haiku/i, '#C8C8C0'],
 ]
-export const modelTint = (model: string): string | undefined => RARITY.find(([re]) => re.test(model))?.[1]
+export const modelTint = (model: string): string | undefined => SHELL_TINT.find(([re]) => re.test(model))?.[1]
 
 const svg = (W: number, H: number, body: string): string =>
   `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${PANE_CSS}${CRAB_CSS}${body}</svg>`

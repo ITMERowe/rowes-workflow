@@ -7,9 +7,9 @@ A Claude Code plugin with two parts: a band above the prompt, and a live panel f
   - Session totals: cost, tokens and time. Hover over cost or tokens to see where they came from.
   - Every worker: the main session, running, finished and planned subagents, the task list and background tasks, each with its model, effort, progress, context and cost. Click a row's `▸ N` to list its tool calls.
   - The skills and plugins in use.
-- **The crab crew:** each crab wears a Path of Exile or Path of Exile 2 ascendancy and acts it out in pixel animation while it works:
+- **The crab crew:** each crab wears a class costume and acts it out in pixel animation while it works:
 
-  | Ascendancy | Action |
+  | Class | Action |
   | --- | --- |
   | Tactician | Reads a map |
   | Pathfinder | Walks and looks around |
@@ -77,3 +77,5 @@ band began as a fork of [savvy-progress](https://github.com/JohnnyVizz/claude-ki
 - The crab crew.
 
 It still shows the [savvy-flow](https://github.com/JohnnyVizz/claude-kit/tree/main/plugins/savvy-flow) planner's workers.
+
+The crab costumes are original pixel art based on *Path of Exile* and *Path of Exile 2* ascendancies. They are fan art, not affiliated with Grinding Gear Games.

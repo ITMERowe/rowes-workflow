@@ -81,7 +81,7 @@ test("a hook's added context marks the plugins it names as in use", () => {
   expect(pluginsIn([`# recent context\n${'x'.repeat(500)} used ponytail and claude-mem`], enabled)).toEqual([])
 })
 
-test('a crab is tinted by its model as item rarity: Haiku Normal, Sonnet Magic, Opus Rare, Fable Unique', () => {
+test('a crab is tinted by its model: Haiku grey, Sonnet blue, Opus yellow, Fable orange', () => {
   expect(modelTint('claude-opus-5-5')).toBe('#E6CC3E')
   expect(modelTint('claude-sonnet-5-5')).toBe('#7B7BF0')
   expect(modelTint('claude-haiku-5-5')).toBe('#C8C8C0')
