@@ -26,8 +26,8 @@ const windows = atom({ plugin: 'ribbon', key: 'windows' } as const, [])
 type UsageWindow = { kind: string; percentUsed: number; resetsAt?: string }
 
 // Background subagents with no model of their own run on a cheap one. Types that pin their
-// own model (searcher, editor, reviewer, savvy-*) and forks keep theirs.
-const PINNED = new Set(['searcher', 'editor', 'reviewer'])
+// own model (searcher, reader, editor, reviewer, savvy-*) and forks keep theirs.
+const PINNED = new Set(['searcher', 'reader', 'editor', 'reviewer'])
 function routeModel<T extends { background: boolean; fork: boolean; model?: string; subagentType: string; parentModel: string }>(e: T): T {
   if (!e.background || e.fork || e.model || PINNED.has(e.subagentType) || e.subagentType.startsWith('savvy-')) return e
   if (/haiku/i.test(e.parentModel)) return e
@@ -2244,9 +2244,14 @@ export const register: Register = (on, options) => {
     const beneath = new Set(next.trace.filter(t => t.outcome !== 'skipped').map(t => t.plugin))
     const f = await read($, flow)
     const ws = beneath.has('ribbon') ? await read($, windows) : []
-    if (f === null && ws.length === 0) return drawn ?? next(e)
     // This band stands in for ribbon's and ponytail's rows; any other band is kept.
     const isOurs = [...beneath].every(p => p === 'ribbon' || p === 'ponytail')
+    // Nothing to draw yet (no plan, ribbon's windows not read): still hide their rows.
+    if (f === null && ws.length === 0) {
+      if (beneath.size === 0 || !isOurs) return drawn ?? next(e)
+      const { Box } = $.ui.resolve(e)
+      return <Box />
+    }
     const rest = isOurs ? null : below
 
     const ui = $.ui.resolve(e)

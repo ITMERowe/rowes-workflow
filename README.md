@@ -1,11 +1,12 @@
 # Rowe's Workflow
 
-Rowe's whole Claude Code workflow in one repository: one mod (plugin) and three routing agents.
+Rowe's whole Claude Code workflow in one repository: two mods (plugins) and five routing agents.
 
 | Part | What it does |
 | --- | --- |
 | `plugins/savvy-progress` | The band above the prompt, the agents panel (`/agents-info`), and model routing for background agents. |
-| `agents/` | `searcher`, `editor` and `reviewer` subagents, each pinned to a model tier. |
+| `plugins/auto-route` | Reads each prompt and adds a routing note: a read-only ask (a guide, post or link) goes to `reader` on Haiku, and the skills that fit the ask are named. |
+| `agents/` | `searcher`, `Explore`, `reader`, `editor` and `reviewer` subagents, each pinned to a model tier. `Explore` replaces the built-in one, which now runs on the session model. |
 | `CLAUDE.md.snippet` | The "Routing" and "Progress" rules that tell Claude when to use each agent and tool. |
 | `install.ps1`, `install.sh` | Install the plugins in `plugins.txt`, copy `agents/*.md` to `~/.claude/agents`, and print the snippet for you to paste (Windows, macOS/Linux). |
 
@@ -36,18 +37,23 @@ The band stands in for ribbon's and ponytail's own rows, so nothing shows twice.
 2. **Row 2, left:** the main session (its current task-list step and last action), running, finished and planned subagents, the task list, and background tasks (small crabs, one colour each). A task-list step handed to a subagent whose description is the step's exact text shows once, as that agent's row.
 3. **Row 2, right:** skills and plugins. Ones used since the main session's last turn ended get a full card; the rest (used earlier, or enabled and not used yet) sit in a chip grid. Each has its own crab colour, apart from subagents and background tasks.
 
-Each card scrolls on its own under the wheel. On a narrow pane row 2 stacks into one column. Tools: `mcp__savvy-progress__progress` (the main session reports a flow) and `mcp__savvy-progress__step` (a worker reports its steps). `routeModel`: a background subagent with no pinned model runs on Sonnet (Haiku for `Explore`); agents in its `PINNED` set (`searcher`, `editor`, `reviewer`) and `savvy-*` workers keep their own model.
+Each card scrolls on its own under the wheel. On a narrow pane row 2 stacks into one column. Tools: `mcp__savvy-progress__progress` (the main session reports a flow) and `mcp__savvy-progress__step` (a worker reports its steps). `routeModel`: a background subagent with no pinned model runs on Sonnet (Haiku for `Explore`); agents in its `PINNED` set (`searcher`, `reader`, `editor`, `reviewer`) and `savvy-*` workers keep their own model.
 
 ## Routing
 
 | Task | Agent | Model |
 | --- | --- | --- |
 | Search or locate code | `searcher` | Haiku, low effort |
-| Broad sweep across many files, conclusion only | `Explore` (built in) | Haiku |
+| Broad sweep across many files, conclusion only | `Explore` | Haiku, low effort |
+| Read a guide, post, doc page or link | `reader` | Haiku, low effort |
 | Routine edits | `editor` | Sonnet, medium effort |
 | Review of auth, permissions, payments, migrations, deletion, concurrency | `reviewer` | Opus, high effort |
 | Messy code, root-cause debugging, multi-file change | `savvy-heavy` (savvy-flow) | Opus |
-| Everything else | main session | the session's model |
+| Everything else | main session | the session's model, with Opus as advisor |
+
+The main session keeps Opus within reach without a handoff: `"advisorModel": "opus"` in `~/.claude/settings.json` (or `/advisor opus`) lets it consult Opus at decision points. The [advisor](https://code.claude.com/docs/en/advisor) needs the Anthropic API and a main model Claude Code recognizes.
+
+auto-route's notes are hints from a keyword table: the routing table and the skill descriptions still decide.
 
 ### Why the agents are not plugin agents
 

@@ -9,6 +9,11 @@
       "name": "savvy-progress",
       "source": "./plugins/savvy-progress",
       "description": "Band above the prompt (flow and plan usage), agents panel (/agents-info) with skills and plugins in use, and background-agent model routing."
+    },
+    {
+      "name": "auto-route",
+      "source": "./plugins/auto-route",
+      "description": "Adds a routing note to each prompt: reading a guide or post goes to the Haiku reader, and the skills that fit the ask are named."
     }
   ]
 }
