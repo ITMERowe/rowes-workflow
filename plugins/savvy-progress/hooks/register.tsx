@@ -707,87 +707,120 @@ const crabBody = (f: Fill, armFront = 0, armCls?: string): void => {
 const CRAB_CSS = `<style>
 .run .la{animation:st .5s steps(1) infinite}.run .lb{animation:st .5s steps(1) infinite -.25s}
 .run .bd{animation:bob .5s steps(1) infinite -.125s}
-.run g{transform-box:fill-box}
 @keyframes st{50%{transform:translateY(-1px)}}@keyframes bob{50%{transform:translateY(1px)}}
-.c-fable.run{animation:float 1s ease-in-out infinite}
+.f2,.q2,.q3,.q4{opacity:0}
+.run .f1{animation:fa .5s steps(1) infinite}.run .f2{animation:fb .5s steps(1) infinite}
+@keyframes fa{50%{opacity:0}}@keyframes fb{50%{opacity:1}}
+.run .q1,.run .q2,.run .q3,.run .q4{animation:q 1s steps(1) infinite}
+.run .q2{animation-delay:-.75s}.run .q3{animation-delay:-.5s}.run .q4{animation-delay:-.25s}
+@keyframes q{0%{opacity:1}25%,100%{opacity:0}}
+.c-king.run .la,.c-king.run .lb,.c-king.run .bd,.c-light.run .la,.c-light.run .lb,.c-light.run .bd,.c-heavy.run .la,.c-heavy.run .lb,.c-heavy.run .bd{animation:none}
+.c-king.run .f1,.c-king.run .f2{animation-duration:1s}
+.c-fable.run{animation:float 1s steps(2) infinite}
 .c-fable.run .la,.c-fable.run .lb,.c-fable.run .bd{animation:none}
-.c-fable.run .ant{animation:blink 1s steps(1) infinite}
-.c-fable.run .star{animation:blink .5s steps(1) infinite -.25s}
-@keyframes float{50%{transform:translateY(-2px)}}@keyframes blink{50%{opacity:.15}}
-.c-heavy.run .it{animation:scan 1s steps(1) infinite}
-.c-heavy.run .gl{animation:blink 1s steps(1) infinite -.5s}
-@keyframes scan{25%{transform:translate(-1px,1px)}50%{transform:translate(-2px,2px)}75%{transform:translate(-1px,1px)}}
-.c-careful.run .it{transform-origin:100% 100%;animation:twist .5s ease-in-out infinite}
-@keyframes twist{50%{transform:rotate(-35deg)}}
-.c-medium.run .pan{transform-origin:0 50%;animation:tilt 1s ease-in-out infinite}
-.c-medium.run .egg{animation:flip 1s ease-in-out infinite}
-@keyframes tilt{20%,40%{transform:rotate(-12deg)}}@keyframes flip{30%{transform:translateY(-5px) scaleY(-1)}60%{transform:translateY(0)}}
-.c-light.run .la{animation-duration:.25s}.c-light.run .lb{animation-duration:.25s;animation-delay:-.125s}
-.c-light.run .flag{transform-origin:0 50%;animation:wave .25s steps(1) infinite}
-@keyframes wave{50%{transform:skewY(-12deg) scaleX(.85)}}
-.c-explore.run .it{transform-origin:50% 100%;animation:fence .5s ease-in-out infinite}
-@keyframes fence{50%{transform:rotate(25deg)}}
-.c-king.run .gem{animation:blink 1s steps(1) infinite}
+@keyframes float{50%{transform:translateY(-2px)}}
 @media (prefers-reduced-motion: reduce){.run,.run g{animation:none!important}}
 </style>`
 
-const COSTUMES: Record<string, (f: Fill, t: string) => void> = {
-  // King: the main session, in a gold crown; its gems glint while it works.
+// The eyes' glint, moved a pixel to show where the crab looks.
+const glance = (f: Fill, dx: number, dy: number, cls: string): void => {
+  f(9 + dx, 12 + dy, 1, 1, '#FFFFFF', cls)
+  f(19 + dx, 12 + dy, 1, 1, '#FFFFFF', cls)
+}
+
+// Path of Exile and Path of Exile 2 ascendancies, one per role: original pixel art after each one's
+// portrait. Motion is sprite frames: `f1`/`f2` swap every half second, `q1`..`q4` step through four
+// quarters of a second; the first frame shows at rest. Casters and the planner stand still while
+// they work. Each costume keeps its own palette and never paints CLAY (only a claw that moves with
+// the frames does), so any shell tint fits any costume, whatever the routing.
+const COSTUMES: Record<string, (f: Fill) => void> = {
+  // King: Tactician, the main session. Shaggy brown hair, a campaign map held in both claws; the eyes
+  // move over the map and the red mark moves to the next objective.
   king: f => {
     crabBody(f)
-    stamp(f, 8, 5, ['g....g....g....', 'gg..ggg..ggg.gg', 'ggggggggggggggg', 'ggrgggbgggggrgg', 'ddddddddddddddd'], { g: '#F5C542', d: '#C99A1E', r: '#D0453F', b: '#5B8DEF' })
-    f(8, 5, 1, 1, '#FBE08A', 'gem'); f(13, 5, 1, 1, '#FBE08A', 'gem'); f(18, 5, 1, 1, '#FBE08A', 'gem')
+    stamp(f, 7, 5, ['..h.hh..hh.h.h..', '.hhhhhhhhhhhhhh.', 'hhhhhhhhhhhhhhhh', 'hdhhdhhhhdhhdhhh', 'h.hh.h.hh.h.hh.h'], { h: '#5A3A22', d: '#3E2716' })
+    stamp(f, 5, 15, ['eppppppppppppppppppe', 'eplllpppppplppppllpe', 'epppplpppplplppppppe', 'eppppplllllpplllpppe', 'eppppppppppppppppppe'], { p: '#E8D9B0', l: '#8A6A3A', e: '#C9B48A' })
+    stamp(f, 8, 16, ['r.r', '.r.', 'r.r'], { r: '#C4302B' }, 'f1')
+    stamp(f, 17, 16, ['r.r', '.r.', 'r.r'], { r: '#C4302B' }, 'f2')
+    glance(f, 0, 1, 'f1'); glance(f, 1, 1, 'f2')
   },
-  // Fable: astronaut in a glass dome; floats instead of walking, the antenna and the star blink.
-  fable: (f, t) => {
-    crabBody(f)
-    f(6, 7, 18, 1, '#E6E8EE'); f(5, 8, 1, 14, '#E6E8EE'); f(24, 8, 1, 14, '#E6E8EE'); f(6, 22, 18, 1, '#C9CCD2')
-    f(6, 8, 18, 14, 'rgba(169,214,245,.32)'); f(8, 9, 2, 1, '#fff'); f(8, 10, 1, 2, '#fff')
-    f(14, 4, 2, 3, '#C9CCD2'); f(14, 2, 2, 2, t, 'ant'); f(13, 18, 4, 2, t)
-    f(27, 3, 1, 3, '#F5C542', 'star'); f(26, 4, 3, 1, '#F5C542', 'star')
-  },
-  // Heavy: detective with a deerstalker; the magnifier sweeps and glints.
-  heavy: (f, t) => {
-    crabBody(f, -4, 'it')
-    stamp(f, 6, 3, ['......bbbbbb......', '....bbcbbcbbbb....', '...bbbbbbbbbbbb...', '..bcbbcbbcbbcbbb..', '.bbbbbbbbbbbbbbbb.', 'dddddddddddddddddd'], { b: '#7A4A26', c: '#A0703F', d: '#5A3519' })
-    f(6, 9, 18, 1, t)
-    stamp(f, 23, 1, ['.kkk.', 'k...k', 'k...k', 'k...k', '.kkk.'], { k: '#3A3A3C' }, 'it')
-    f(24, 2, 3, 3, 'rgba(169,214,245,.7)', 'it'); f(25, 6, 1, 4, '#7A4A26', 'it'); f(24, 2, 1, 1, '#fff', 'gl')
-  },
-  // Careful: engineer in a hard hat; the wrench turns a bolt.
-  careful: (f, t) => {
-    crabBody(f)
-    stamp(f, 6, 4, ['.....yyyyyyyy.....', '...yyyyyhhyyyyy...', '..yyyyyyhhyyyyyy..', '..yyyyyyhhyyyyyy..', '.yyyyyyyhhyyyyyyy.', 'dddddddddddddddddd'], { y: '#F5C542', h: '#FBE08A', d: '#C99A1E' })
-    f(13, 5, 4, 2, t)
-    stamp(f, 0, 10, ['.s.s', 'sss.', '.s..', '.s..'], { s: '#8E929A' }, 'it')
-  },
-  // Medium: chef, the toque traced from DockCrab's Sprites.chefHat; tosses the omelette.
-  medium: (f, t) => {
-    crabBody(f, -4, 'pan')
-    stamp(f, 6, 0, ['........lll.......', '.......lllll......', '.wwwwgwwwwwwgwwwww', 'wwwwwwwwwwwwwwwwww', 'wwwwwwwwwwwwwwwwww', 'wwwwwgwwwwwggwwwww', '.wwwwgwwwwwggwwwww', '.dddbbbbbbbbbbbbb.', '.dddbbbbbbbbbbbbb.', '.dddbbbbbbbbbbbbb.'], { w: '#F4F3EE', l: '#F7F6F2', g: '#D2D1C8', b: t, d: '#B45F43' })
-    f(22, 8, 7, 2, '#4A4A48', 'pan'); f(26, 10, 1, 1, '#4A4A48', 'pan'); f(24, 7, 3, 1, '#F5B731', 'egg')
-  },
-  // Light: racer in a helmet; runs at double pace, the checkered flag flutters.
-  light: (f, t) => {
-    crabBody(f, -4)
-    stamp(f, 6, 5, ['....rrrrrrrrrr....', '..rrrrrrwwrrrrrr..', '.rrrrrrrwwrrrrrrr.', '.rrrrrrrwwrrrrrrr.', '.rrrrrrrwwrrrrrrr.', '.kkkkkkkkkkkkkkkkr'], { r: t, w: '#F8F6F1', k: INK })
-    f(25, 1, 1, 9, '#8E929A')
-    stamp(f, 26, 1, ['wkwk', 'kwkw', 'wkwk'], { w: '#F8F6F1', k: INK }, 'flag')
-  },
-  // Explore: pirate scouting the code; the cutlass fences.
+  // Explore: Pathfinder. Short blonde hair, a bow slung on the back, a claw shading the eyes; walks
+  // and looks one way, then the other.
   explore: f => {
-    crabBody(f)
-    stamp(f, 5, 3, ['.kk..............kk.', '.kkk....kkkk....kkk.', '..kkkkkkkwwkkkkkkk..', '..kkkkkkkkkkkkkkkk..', '.gggggggggggggggggg.'], { k: '#55514C', w: '#F8F6F1', g: '#F5C542' })
-    f(7, 11, 11, 1, INK); f(18, 11, 4, 3, INK)
-    f(27, 6, 1, 9, '#C9CCD2', 'it'); f(26, 15, 3, 1, '#7A4A26', 'it')
+    crabBody(f, -4)
+    stamp(f, 7, 6, ['...hhhhhhhhhh...', '.hhhhhhhhhhhhhh.', 'hhhhhhhhhhhhhhhh', 'hh.hhh.hhhh.h.hh'], { h: '#E2C46A' })
+    f(9, 7, 3, 1, '#B8963E'); f(16, 8, 3, 1, '#B8963E')
+    f(5, 6, 1, 12, '#8A5A2B'); f(6, 7, 1, 10, '#D9D4C7')
+    for (let i = 0; i < 6; i++) f(9 + i * 2, 15 + i, 2, 1, '#6B4A2B')
+    glance(f, 0, 0, 'f1'); glance(f, 1, 0, 'f2')
   },
-  other: f => crabBody(f),
+  // Light: Ritualist. A deep blue hood edged in glowing runes; stands and casts, one rune after another
+  // flaring over the raised claw.
+  light: f => {
+    crabBody(f, -4)
+    stamp(f, 6, 4, ['......kkkkkk......', '....kkkkkkkkkk....', '...kkkkkkkkkkkk...', '..kkkkkkkkkkkkkk..', '..kkkkkkkkkkkkkk..', '.bbbbbbbbbbbbbbbb.', '.kk............kk.', '.k..............k.'], { k: '#1E2433', b: '#3E6FB0' })
+    f(14, 16, 2, 2, '#3E6FB0')
+    stamp(f, 23, 3, ['..r..', '.r.r.', 'r.r.r', '.r.r.', '..r..'], { r: '#5FD0FF' }, 'f1')
+    stamp(f, 23, 3, ['r.r.r', '.rrr.', 'rr.rr', '.rrr.', 'r.r.r'], { r: '#9FE6FF' }, 'f2')
+    f(14, 16, 2, 2, '#9FE6FF', 'f2')
+  },
+  // Medium: Gladiator. A crested bronze helm and a buckler; the sword is raised, then swung through.
+  medium: f => {
+    crabBody(f, -4, 'f1')
+    stamp(f, 6, 3, ['........cc........', '.......cccc.......', '....bbbbbbbbbb....', '..bbbbbbbbbbbbbb..', '.bbbbbbbbbbbbbbbb.', '.bbdbbbbbbbbbbdbb.', 'dddddddddddddddddd', '.bb............bb.', '.bb............bb.'], { c: '#C4302B', b: '#B8863B', d: '#7A5524' })
+    stamp(f, 2, 13, ['.bbb.', 'bbobb', '.bbb.'], { b: '#8A5A2B', o: '#C9A227' })
+    f(25, 2, 1, 7, '#D9DCE3', 'f1'); f(24, 9, 3, 1, '#C9A227', 'f1')
+    f(23, 14, 4, 4, CLAY, 'f2'); f(26, 13, 1, 1, '#C9A227', 'f2')
+    f(27, 12, 1, 1, '#D9DCE3', 'f2'); f(28, 11, 1, 1, '#D9DCE3', 'f2'); f(29, 10, 1, 1, '#D9DCE3', 'f2')
+    f(22, 3, 1, 1, '#FFFFFF', 'f2'); f(24, 2, 2, 1, '#FFFFFF', 'f2'); f(27, 3, 1, 1, '#FFFFFF', 'f2'); f(28, 5, 1, 2, '#FFFFFF', 'f2')
+  },
+  // Careful: Martial Artist. Shaved head with a dark topknot, tattoos and wrapped claws; the quarterstaff
+  // is held upright, then struck across with a spark where it lands.
+  careful: f => {
+    crabBody(f)
+    stamp(f, 13, 5, ['.kk.', 'kkkk', '.kk.', '.kk.', '.kk.'], { k: '#2B2724' })
+    f(8, 10, 5, 1, '#6E6A66'); f(17, 10, 5, 1, '#6E6A66')
+    f(8, 16, 1, 2, '#203A70'); f(21, 16, 1, 2, '#203A70')
+    f(3, 15, 4, 1, '#E8E4D8'); f(23, 15, 4, 1, '#E8E4D8')
+    f(27, 2, 1, 19, '#8A5A2B', 'f1'); f(27, 2, 1, 1, '#C9A227', 'f1'); f(27, 20, 1, 1, '#C9A227', 'f1')
+    for (let i = 0; i < 9; i++) f(21 + i, 3 + i * 2, 1, 2, i === 0 || i === 8 ? '#C9A227' : '#8A5A2B', 'f2')
+    f(20, 1, 1, 1, '#FBE08A', 'f2'); f(22, 1, 1, 1, '#FBE08A', 'f2'); f(19, 3, 1, 1, '#FBE08A', 'f2')
+  },
+  // Heavy: Stormweaver. Long dark hair lit violet; stands and casts, sparks gathering at the claw, then
+  // a bolt striking down.
+  heavy: f => {
+    crabBody(f, -4)
+    stamp(f, 6, 5, ['....kkkkkkkkkk....', '..kkkkkkkkkkkkkk..', '.kkkpkkkkkkkkpkkk.', '.kkkkkkkkkkkkkkkk.', 'kkk............kkk', 'kk..............kk', 'k.................', 'k.................', 'p.................'], { k: '#2A1F3D', p: '#7A4FD0' })
+    f(7, 19, 16, 1, '#7A4FD0')
+    f(24, 8, 1, 1, '#C9A8FF', 'f1'); f(27, 7, 1, 1, '#C9A8FF', 'f1'); f(26, 5, 1, 1, '#9B6BFF', 'f1')
+    stamp(f, 24, 0, ['..b', '..b', '.b.', '.b.', '..b', '...b', '..b', '.b.', '.b.'], { b: '#F1E6FF' }, 'f2')
+    f(23, 9, 1, 1, '#9B6BFF', 'f2'); f(28, 9, 1, 1, '#9B6BFF', 'f2'); f(28, 3, 1, 1, '#9B6BFF', 'f2')
+  },
+  // Fable: Chronomancer. Silver hair under a dark circlet; floats, a clock face over the raised claw
+  // with its hand sweeping round each second.
+  fable: f => {
+    crabBody(f, -4)
+    stamp(f, 7, 5, ['...ssssssssss...', '.ssssssssssssss.', 'ssssssssssssssss', 'kkkkkkkbbkkkkkkk', 's.ss.sss.ss.ss.s'], { s: '#D8DDE6', k: '#2E3440', b: '#4A7BD8' })
+    stamp(f, 23, 1, ['..ccc..', '.c...c.', 'c.....c', 'c.....c', 'c.....c', '.c...c.', '..ccc..'], { c: '#9FD3FF' })
+    f(26, 4, 1, 1, '#C9A227')
+    f(26, 2, 1, 2, '#E6F0FF', 'q1'); f(27, 4, 2, 1, '#E6F0FF', 'q2'); f(26, 5, 1, 2, '#E6F0FF', 'q3'); f(24, 4, 2, 1, '#E6F0FF', 'q4')
+  },
+  // Other: the Exile, washed ashore in rags, for tasks, skills, background jobs and any agent no class
+  // fits; the loose ends flap.
+  other: f => {
+    crabBody(f)
+    f(7, 10, 16, 2, '#8B7D6B'); f(12, 10, 2, 1, '#6E6252')
+    f(8, 12, 1, 1, '#8B7D6B'); f(13, 12, 2, 1, '#8B7D6B'); f(17, 12, 1, 1, '#8B7D6B')
+    f(16, 17, 3, 2, '#6E6252'); f(17, 17, 1, 1, '#8B7D6B')
+    f(3, 10, 4, 1, '#8B7D6B', 'f1'); f(4, 11, 2, 1, '#6E6252', 'f1')
+    f(3, 11, 4, 1, '#8B7D6B', 'f2'); f(2, 12, 2, 1, '#6E6252', 'f2')
+  },
 }
 
 // A costume by task first, then by model. A savvy worker keeps its tier's. A searcher or Explore is
-// the pirate, an editor the engineer, a reviewer the detective; any other agent dresses for the
-// task its description names, else for the model it runs on (Fable astronaut, Opus engineer,
-// Sonnet chef, Haiku racer).
+// the Pathfinder, an editor the Martial Artist, a reviewer the Stormweaver; any other agent dresses
+// for the task its description names, else for the model it runs on (Fable Chronomancer, Opus
+// Martial Artist, Sonnet Gladiator, Haiku Ritualist), else as the Exile.
 const costumeOf = (a: AgentRun): string => {
   const tier = tierOf(a.type)
   if (tier !== 'other') return tier
@@ -813,14 +846,14 @@ const CRAB_SCALE = 1.1
 // legs stay outside it and step on their own. `mirror` flips the crab inside its
 // own box (x .. x + CRAB_BOX * scale) so it faces left.
 // `tint` recolours the body: background tasks are smaller crabs in their own colour.
-const crab = (x: number, y: number, costume: string, dim = false, isWalking = false, scale = CRAB_SCALE, mirror = false, tint?: string): string => {
+export const crab = (x: number, y: number, costume: string, dim = false, isWalking = false, scale = CRAB_SCALE, mirror = false, tint?: string): string => {
   const groups = new Map<string, string[]>([['bd', []]])
   const f: Fill = (cx, cy, w, h, c, cls = 'bd') => {
     if (!groups.has(cls)) groups.set(cls, [])
     groups.get(cls)?.push(`<rect x="${cx}" y="${cy}" width="${w}" height="${h}" fill="${c}"/>`)
   }
-  const draw = COSTUMES[costume] ?? ((g: Fill) => crabBody(g))
-  draw(f, colorOf(costume))
+  const draw = COSTUMES[costume] ?? COSTUMES.other ?? ((g: Fill) => crabBody(g))
+  draw(f)
   const group = (cls: string) => `<g class="${cls}">${(groups.get(cls) ?? []).join('')}</g>`
   const props = [...groups.keys()].filter(k => k !== 'bd' && k !== 'la' && k !== 'lb')
   const body = `<g class="bd">${(groups.get('bd') ?? []).join('')}${props.map(group).join('')}</g>`
@@ -858,8 +891,14 @@ const crabWidth = (scale: number): number => Math.round(CRAB_BOX * scale * 100) 
 const rowCrab = (W: number, x: number, y: number, costume: string, dim = false, isWalking = false, tint?: string): string =>
   crab(mx(W, x, crabWidth(CRAB_SCALE)), y, costume, dim, isWalking, CRAB_SCALE, isRtl(), tint)
 
-// The crab's shell by model, under any costume: Opus keeps the clay, Sonnet is green, Haiku yellow.
-export const modelTint = (model: string): string | undefined => (/sonnet/i.test(model) ? '#6FBF73' : /haiku/i.test(model) ? '#E8C547' : undefined)
+// The crab's shell by model, as an item's rarity: Haiku Normal, Sonnet Magic, Opus Rare, Fable Unique.
+const RARITY: [RegExp, string][] = [
+  [/fable|mythos/i, '#C27A2E'],
+  [/opus/i, '#E6CC3E'],
+  [/sonnet/i, '#7B7BF0'],
+  [/haiku/i, '#C8C8C0'],
+]
+export const modelTint = (model: string): string | undefined => RARITY.find(([re]) => re.test(model))?.[1]
 
 const svg = (W: number, H: number, body: string): string =>
   `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${PANE_CSS}${CRAB_CSS}${body}</svg>`

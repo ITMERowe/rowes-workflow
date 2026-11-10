@@ -55,16 +55,20 @@ The agents install as plain files in `~/.claude/agents`, not as agents inside a 
 
 ## Crab costume legend
 
-Each subagent in the panel is a crab dressed for its task and model:
+Each crab in the panel wears a Path of Exile or Path of Exile 2 ascendancy for its job, drawn as original pixel art, and acts it out while it works:
 
-| Costume | Meaning |
-| --- | --- |
-| Pirate | Search |
-| Engineer | Edit |
-| Detective | Review |
-| Chef | Anything else on Sonnet |
-| Racer | Anything else on Haiku |
-| Astronaut | Anything else on Fable |
+| Ascendancy | Worn by | While working |
+| --- | --- | --- |
+| Tactician | The main session | Reads a campaign map, the mark moving to the next objective |
+| Pathfinder | Search (`searcher`, `Explore`) | Walks and looks one way, then the other |
+| Martial Artist | Edit (`editor`, savvy-careful) | Strikes with a quarterstaff |
+| Stormweaver | Review (`reviewer`, savvy-heavy) | Calls down lightning |
+| Gladiator | Anything else on Sonnet | Swings a sword |
+| Ritualist | Anything else on Haiku | Casts runes |
+| Chronomancer | Anything else on Fable | Floats, turning a clock |
+| Exile | Tasks, skills, background jobs, and agents no class fits | Rags flap |
+
+The shell is tinted by the model, like an item's rarity: Haiku Normal (grey), Sonnet Magic (blue), Opus Rare (yellow), Fable Unique (orange).
 
 ## Requirements
 

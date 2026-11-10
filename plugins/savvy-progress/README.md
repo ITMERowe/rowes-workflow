@@ -5,7 +5,7 @@ Forked from [savvy-progress](https://github.com/JohnnyVizz/claude-kit/tree/main/
 A Claude Code mod: a progress bar above the prompt and a live panel of subagents. Made for the [savvy-flow](https://github.com/JohnnyVizz/claude-kit/tree/main/plugins/savvy-flow) skill, and useful with any subagents.
 
 - **Progress bar**: the flow's title, phase, accepted tasks out of planned, and a button with the crew size that opens the panel. It appears once something reports progress (savvy-flow does) or a `savvy-*` worker starts.
-- **Agents panel** (`/agents-info` toggles it; `/agents-info open` opens it or brings it forward without toggling): running, finished and planned subagents with model, effort, task progress, context, estimated cost and time. Working crabs walk, and each savvy tier animates its prop: the astronaut floats, the detective sweeps the magnifier, the engineer turns the wrench, the chef tosses the omelette, the racer runs with a fluttering flag. `prefers-reduced-motion` stops them.
+- **Agents panel** (`/agents-info` toggles it; `/agents-info open` opens it or brings it forward without toggling): running, finished and planned subagents with model, effort, task progress, context, estimated cost and time. Each crab wears a Path of Exile or Path of Exile 2 ascendancy and acts it out in two- or four-frame pixel animation while it works: the Tactician reads a map, the Pathfinder walks and looks around, the Ritualist casts runes, the Gladiator swings a sword, the Martial Artist strikes with a quarterstaff, the Stormweaver calls lightning, the Chronomancer floats turning a clock, and the Exile's rags flap. `prefers-reduced-motion` stops them.
 
 ## Tools it adds
 

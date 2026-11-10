@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { bandSvg, cardAt, isOverdue, kitLabel, kitOf, kitRowsOf, modelTint, pluginsIn, usageSvg, useKit, workOf } from './register'
+import { bandSvg, cardAt, crab, isOverdue, kitLabel, kitOf, kitRowsOf, modelTint, pluginsIn, usageSvg, useKit, workOf } from './register'
 
 test('a tool call becomes one work line', () => {
   expect(workOf('Edit', { file_path: 'C:\\repo\\src\\app.ts' })).toEqual(['edit', 'src/app.ts'])
@@ -81,8 +81,19 @@ test("a hook's added context marks the plugins it names as in use", () => {
   expect(pluginsIn([`# recent context\n${'x'.repeat(500)} used ponytail and claude-mem`], enabled)).toEqual([])
 })
 
-test('a crab is tinted by its model: Opus clay, Sonnet green, Haiku yellow', () => {
-  expect(modelTint('claude-opus-5-5')).toBeUndefined()
-  expect(modelTint('claude-sonnet-5-5')).toBe('#6FBF73')
-  expect(modelTint('claude-haiku-5-5')).toBe('#E8C547')
+test('a crab is tinted by its model as item rarity: Haiku Normal, Sonnet Magic, Opus Rare, Fable Unique', () => {
+  expect(modelTint('claude-opus-5-5')).toBe('#E6CC3E')
+  expect(modelTint('claude-sonnet-5-5')).toBe('#7B7BF0')
+  expect(modelTint('claude-haiku-5-5')).toBe('#C8C8C0')
+  expect(modelTint('claude-fable-5-1')).toBe('#C27A2E')
+  expect(modelTint('some-other-model')).toBeUndefined()
+})
+
+test('every costume takes any shell: a tint leaves no clay behind, and the working frame shows', () => {
+  for (const costume of ['king', 'explore', 'light', 'medium', 'careful', 'heavy', 'fable', 'other']) {
+    const svg = crab(0, 0, costume, false, true, 1, false, '#7B7BF0')
+    expect(svg.includes('#D97757')).toBe(false)
+    expect(svg.includes('fill="#7B7BF0"')).toBe(true)
+    expect(/class="(f2|q2)"/.test(svg)).toBe(true)
+  }
 })
