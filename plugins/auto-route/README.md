@@ -17,6 +17,20 @@ A model-routing plugin for Claude Code. It works on its own: no other plugin is 
 | Bounded edit: rename, known-cause bug, boilerplate, tests | `auto-route:editor` | sonnet |
 | Anything else | main session | session model |
 
+## Simple questions on a cheaper model
+
+A short question (no code, path or link) gets its turn moved to a cheaper model. A small model call sorts it first:
+
+| The question is | It runs on | While the session context is under |
+|---|---|---|
+| Plain chat, not about code | Haiku | 100,000 tokens (`haikuUpTo`) |
+| Technical, asking for no change | Sonnet | 50,000 tokens (`sonnetUpTo`) |
+| Asking for work | the session's model | |
+
+The limits exist because each model has its own prompt cache. The first switched turn writes the whole conversation into the cheaper model's cache, while the session's model would have read its own cache cheaply. Under 100K tokens, Haiku costs about the same as a warm Opus cache and far less per answer. Sonnet's first switch costs more than staying on Opus, and it saves only on later questions. Set either limit to `0` in `/config` to turn that switch off.
+
+After a reload nothing switches until the main session makes one request, because until then the context size is unknown.
+
 ## Install
 
 In Claude Code (terminal, desktop app or IDE):

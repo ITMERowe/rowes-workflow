@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { isReadOnly, routeFor, routeNote, RULES, skillsFor } from './register.ts'
+import { isQuestion, isReadOnly, modelFor, routeFor, routeNote, RULES, skillsFor } from './register.ts'
 
 test('reading a guide or link routes to the reader; changing code does not', () => {
   expect(isReadOnly('read this guide https://example.com/post and tell me the gist')).toBe(true)
@@ -44,4 +44,40 @@ test('the routing table reaches only a prompt that can delegate', async ($, on) 
   expect(main.sections.map(s => s.id)).toEqual(['intro', 'auto-route:routing'])
   const sub = await $.prompt.compose({ ...base, tools: ['Read'] } as never)
   expect(sub.sections.map(s => s.id)).toEqual(['intro'])
+})
+
+test('a question gets no agent note, and only a plain one may change model', () => {
+  expect(routeNote('does this project tell claude what model to use when i rename a lot of files?') ?? '').not.toContain('row')
+  expect(isQuestion('what model do you use?')).toBe(true)
+  expect(isQuestion('rename these files')).toBe(false)
+  expect(isQuestion('why does src/app.ts crash?')).toBe(false)
+  const limits = { haiku: 100000, sonnet: 50000 }
+  expect(modelFor('chat', 30000, limits)).toBe('claude-haiku-5-5')
+  expect(modelFor('chat', 150000, limits)).toBeUndefined()
+  expect(modelFor('tech-question', 30000, limits)).toBe('claude-sonnet-5-5')
+  expect(modelFor('tech-question', 80000, limits)).toBeUndefined()
+  expect(modelFor('chat', 0, limits)).toBeUndefined()
+  expect(modelFor('task', 1000, limits)).toBeUndefined()
+})
+
+test('a chat question runs its turn on Haiku once the context size is known', async ($, on) => {
+  const models: string[] = []
+  on('model.classify', () => ({ value: 'chat' }) as never)
+  on('turn.start', (_, e) => ({ turnId: e.turnId }) as never)
+  on('turn.complete', (_, e) => ({ turnId: e.turnId }) as never)
+  on('turn.step', async function* (_, e) {
+    models.push(e.model)
+    return { turnId: e.turnId, index: 0, answer: '', toolUses: [], stopReason: 'end_turn', usage: { model: e.model, input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 20000, cache_creation_input_tokens: 0 } } as never
+  })
+  const step = async (turnId: string) => {
+    for await (const _ of ($.turn.step as (e: unknown) => AsyncIterable<unknown>)({ turnId, index: 0, model: 'caveman-auto', messageCount: 1 })) void _
+  }
+  // The first question comes before any request reported a size: it stays put.
+  await $.turn.start({ text: 'what model do you use?', turnId: 't1' } as never)
+  await step('t1')
+  await $.turn.start({ text: 'what model do you use?', turnId: 't2' } as never)
+  await step('t2')
+  await $.turn.start({ text: 'rename these files', turnId: 't3' } as never)
+  await step('t3')
+  expect(models).toEqual(['caveman-auto', 'claude-haiku-5-5', 'caveman-auto'])
 })

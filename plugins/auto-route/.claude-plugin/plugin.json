@@ -1,7 +1,34 @@
 {
   "name": "auto-route",
-  "version": "0.3.0",
-  "description": "Reads each prompt and tells Claude which subagent model and which skills fit it: reading a guide or post goes to the Haiku reader.",
-  "author": { "name": "ITMERowe" },
-  "license": "MIT"
+  "version": "0.4.0",
+  "description": "Routes Claude Code by the ask: a routing table and agents for subagent work, and simple questions moved to Haiku or Sonnet.",
+  "author": {
+    "name": "ITMERowe"
+  },
+  "license": "MIT",
+  "userConfig": {
+    "haikuUpTo": {
+      "type": "string",
+      "title": "Chat questions on Haiku",
+      "description": "A plain question (not about code) runs on Haiku while the session context is under this many tokens. 0 turns it off. Above 100000 Haiku costs more than a warm Opus cache.",
+      "default": "100000",
+      "options": [
+        "0",
+        "50000",
+        "100000"
+      ]
+    },
+    "sonnetUpTo": {
+      "type": "string",
+      "title": "Technical questions on Sonnet",
+      "description": "A technical question that asks for no change runs on Sonnet while the session context is under this many tokens. 0 turns it off. The first switch writes the whole context to Sonnet's cache, so in a long session it costs more than staying on Opus.",
+      "default": "50000",
+      "options": [
+        "0",
+        "20000",
+        "50000",
+        "100000"
+      ]
+    }
+  }
 }

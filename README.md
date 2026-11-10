@@ -44,7 +44,8 @@ A standalone plugin: it needs no other plugin. Install it and Claude Code gets:
    | The bug nothing else could fix, on request | `auto-route:fable` | Fable |
 
 2. **The routing rules, in every session.** The table and its rules go into the main session's system prompt, so CLAUDE.md doesn't need to hold them. Subagents don't receive it, so they never hand work on further.
-3. **A routing note on each prompt.** Ask *"summarize this post"* and Claude gets a hidden note to send it to `reader` on Haiku. Ask *"why does the build keep failing"* and the note names `heavy`. The note also names up to three skills that fit the ask.
+3. **Simple questions on a cheaper model.** A plain question runs on Haiku, and a technical one on Sonnet, while the session is small enough for the switch to pay off.
+4. **A routing note on each prompt.** Ask *"summarize this post"* and Claude gets a hidden note to send it to `reader` on Haiku. Ask *"why does the build keep failing"* and the note names `heavy`. The note also names up to three skills that fit the ask.
 
 Want Opus on hand without handing the whole task to it? Run `/advisor opus`. The main session then asks Opus at decision points and does the work itself.
 

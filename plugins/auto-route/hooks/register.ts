@@ -70,10 +70,26 @@ export const routeFor = (text: string): Route | undefined =>
 
 export const skillsFor = (text: string): string[] => SKILLS.filter(([re]) => re.test(text)).map(([, s]) => s).slice(0, 3)
 
+// A short question with no code, path or link: the only kind of prompt whose model may be switched,
+// and one that asks about work rather than asking for it, so it gets no agent note.
+const QUESTION_START = /^\s*(what|which|who|why|how|when|where|is|are|does|do|did|can|could|should|would|will|explain)\b/i
+const NOT_PLAIN = /```|https?:\/\/|[\w.-]+[\\/][\w.-]+|\.\w{1,5}\b(?=\s|$|[,:;)])/
+export const isQuestion = (text: string): boolean =>
+  text.length <= 400 && (QUESTION_START.test(text) || /\?\s*$/.test(text)) && !NOT_PLAIN.test(text)
+
+/** The model a question's turn runs on, by its label and the context it carries; undefined keeps the session's. */
+export const modelFor = (label: string | undefined, context: number, limits: { haiku: number; sonnet: number }): string | undefined => {
+  // context 0 is unknown (no main request seen since a reload): switching blind could write a large cache.
+  if (context <= 0) return undefined
+  if (label === 'chat' && context < limits.haiku) return 'claude-haiku-5-5'
+  if (label === 'tech-question' && context < limits.sonnet) return 'claude-sonnet-5-5'
+  return undefined
+}
+
 /** The routing note for one prompt, or undefined when nothing fits. */
 export const routeNote = (text: string): string | undefined => {
   const lines: string[] = []
-  const r = routeFor(text)
+  const r = isQuestion(text) ? undefined : routeFor(text)
   if (r?.agent === A('reader'))
     lines.push('auto-route: this ask only reads a guide, post or link. Hand the reading to the `auto-route:reader` subagent (haiku) with the link or path and what to pull out, then relay its summary. Read it yourself only if it is one short local file.')
   else if (r)
@@ -84,7 +100,36 @@ export const routeNote = (text: string): string | undefined => {
   return lines.length ? lines.join('\n') : undefined
 }
 
-export const register: Register = on => {
+const LABELS = ['chat', 'tech-question', 'task']
+
+export const register: Register = (on, options) => {
+  const limits = { haiku: Number(options.haikuUpTo ?? 100000), sonnet: Number(options.sonnetUpTo ?? 50000) }
+  // The main session's context at its last request (input, cache read and cache write), and the model
+  // each question's turn was moved to. Module state: a reload clears it, and nothing switches until
+  // the next main request reports its size.
+  let context = 0
+  const moved = new Map<string, string>()
+
+  on('turn.start', async ($, e, next) => {
+    if (!e.agentId && isQuestion(e.text) && (limits.haiku > 0 || limits.sonnet > 0)) {
+      const label = await $.model.classify(e.text, LABELS).catch(() => undefined)
+      const model = modelFor(label, context, limits)
+      if (model) moved.set(e.turnId, model)
+    }
+    return next(e)
+  })
+  on('turn.step', async function* ($, e, next) {
+    const model = e.agentId ? undefined : moved.get(e.turnId)
+    const result = yield* next(model ? { ...e, model } : e)
+    const u = result.usage
+    if (!e.agentId && u) context = (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0)
+    return result
+  })
+  on('turn.complete', ($, e, next) => {
+    moved.delete(e.turnId)
+    return next(e)
+  })
+
   // The table goes to the session that can delegate: a subagent's request offers no Agent tool.
   on('prompt.compose', async ($, e, next) => {
     const r = await next(e)
