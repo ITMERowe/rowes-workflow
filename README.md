@@ -17,7 +17,7 @@ Run these in Claude Code, one at a time:
 ```
 
 ```
-/plugin install band@rowes-workflow
+/plugin install hideout@rowes-workflow
 ```
 
 ```
@@ -43,13 +43,13 @@ Each plugin works on its own, so you can install just one. To install from a ter
 
 [How to change the routing →](plugins/auto-route/README.md)
 
-## band: your crew, live
+## Hideout: your crew, live
 
 - **The band** above the prompt shows plan progress and the usage left in your 5-hour and 7-day windows.
 - **The crew panel** (`/agents-info`) shows every agent with its model, cost and tokens. Hover over a figure to see where it came from, and click a row to see its tool calls.
 - **Pixel crabs** act out each job. The Pathfinder searches, the Martial Artist edits, the Stormweaver reviews, and the Tactician plans the main session. The shell colour shows the model: Haiku grey, Sonnet blue, Opus yellow, Fable orange.
 
-[More about band →](plugins/band/README.md)
+[More about Hideout →](plugins/hideout/README.md)
 
 <details>
 <summary><b>The full workflow</b>: the installer, with Rowe's companion plugins</summary>
@@ -60,16 +60,16 @@ git clone https://github.com/ITMERowe/rowes-workflow && cd rowes-workflow && sh 
 
 On Windows, run `./install.ps1` instead of `sh install.sh`. Paste the snippet it prints into `~/.claude/CLAUDE.md`, then run `/reload-plugins`.
 
-Along with auto-route and band, it installs ribbon (plan usage), ponytail (smallest-change code), caveman (terse replies), i-have-adhd (action-first answers), superpowers (process skills) and savvy-flow (a planner). To skip one, remove its line from [`plugins.txt`](plugins.txt) first.
+Along with auto-route and Hideout, it installs ribbon (plan usage), ponytail (smallest-change code), caveman (terse replies), i-have-adhd (action-first answers), superpowers (process skills) and savvy-flow (a planner). To skip one, remove its line from [`plugins.txt`](plugins.txt) first.
 
-Don't run band alongside the original `savvy-progress`, or you'll get two panels.
+Don't run Hideout alongside the original `savvy-progress`, or you'll get two panels.
 
 </details>
 
 <details>
 <summary><b>Developing</b></summary>
 
-From `plugins/auto-route` or `plugins/band`, after each change:
+From `plugins/auto-route` or `plugins/hideout`, after each change:
 
 ```bash
 claude plugin validate .
@@ -83,7 +83,7 @@ claude plugin test .
 
 ## Credits
 
-- **band** began as a fork of [johnnyvizz](https://github.com/JohnnyVizz)'s [savvy-progress](https://github.com/JohnnyVizz/claude-kit/tree/main/plugins/savvy-progress) (MIT).
+- **Hideout** began as a fork of [johnnyvizz](https://github.com/JohnnyVizz)'s [savvy-progress](https://github.com/JohnnyVizz/claude-kit/tree/main/plugins/savvy-progress) (MIT).
 - **auto-route**'s `heavy` and `fable` tiers follow the workers in [savvy-flow](https://github.com/JohnnyVizz/claude-kit).
 - The crab costumes are original pixel art based on *Path of Exile* and *Path of Exile 2* ascendancies. They are fan art, not affiliated with Grinding Gear Games.
 

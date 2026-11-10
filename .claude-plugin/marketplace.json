@@ -6,8 +6,8 @@
   "description": "Rowe's Claude Code workflow: the auto-route model routing and the band crew panel.",
   "plugins": [
     {
-      "name": "band",
-      "source": "./plugins/band",
+      "name": "hideout",
+      "source": "./plugins/hideout",
       "description": "The band above the prompt (plan progress and usage left) and the crew panel (/agents-info), with every subagent as a pixel crab."
     },
     {

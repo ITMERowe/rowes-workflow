@@ -107,7 +107,7 @@ export type BgTask = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'band': {
+    'hideout': {
       flow: Flow | null
       agents: AgentRun[]
       bg: BgTask[]

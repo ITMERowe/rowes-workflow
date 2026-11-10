@@ -2,8 +2,8 @@
 The auto-route plugin holds the routing model and its agents (`auto-route:*`): it adds the agent table and rules to the main session's system prompt, and an `auto-route:` note to each prompt naming the row and skills that fit. Edit the table in `plugins/auto-route/hooks/register.ts`. If auto-route is off, route by the agent descriptions.
 
 ## Progress
-- For any multi-step task, report through the band `progress` tool (title, phase, tasks, done) when it is available. Update it as each step finishes and set `finished` at the end.
+- For any multi-step task, report through the hideout `progress` tool (title, phase, tasks, done) when it is available. Update it as each step finishes and set `finished` at the end.
 - The user watches the agents panel (`/agents-info`, opens itself each session): row 1 cost, tokens and time; row 2 the main session, subagents, tasks and background tasks beside the skills and plugins in use.
 - Put work in the open: run long jobs as background tasks or subagents so they show in the panel. Background subagents with no pinned model auto-route to Sonnet (Haiku for Explore); pass `model` explicitly to override.
-- The `ribbon` plugin must be on: band's band above the prompt draws its plan usage (7-day and 5-hour left) as the USAGE row. If `"ribbon@robonuggets"` is `false` in `~/.claude/settings.json` or the band is missing, tell the user at session start; do not edit settings yourself.
+- The `ribbon` plugin must be on: Hideout's band above the prompt draws its plan usage (7-day and 5-hour left) as the USAGE row. If `"ribbon@robonuggets"` is `false` in `~/.claude/settings.json` or the band is missing, tell the user at session start; do not edit settings yourself.
 - The crab costume shows the task and model: pirate = search, engineer = edit, detective = review, else chef = Sonnet, racer = Haiku, astronaut = Fable.

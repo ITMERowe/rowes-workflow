@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
-const PLUGIN = 'band'
-const PROGRESS = 'mcp__band__progress'
+const PLUGIN = 'hideout'
+const PROGRESS = 'mcp__hideout__progress'
 
 const band = { hasSurvey: false, isWorking: false, maxRows: 4, bodyColumns: 100, scroll: { offset: 0, bodyRows: 4 }, view: {} }
 const pane = { title: '', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} } as const
@@ -30,10 +30,10 @@ for (const surface of ['terminal', 'desktop'] as const) {
 
     const ui = await $.ui.mount({ plugin: PLUGIN, surface, component: 'AbovePrompt', props: band })
     // Two planned tasks, none started: the crew button counts both.
-    expect((await ui.find({ key: 'band-agents' }))?.props.label).toBe('×2')
+    expect((await ui.find({ key: 'hideout-agents' }))?.props.label).toBe('×2')
 
     await $.tool.call({ tool: PROGRESS, done: 1 } as never)
-    expect(opened).toEqual(['band-agents'])
+    expect(opened).toEqual(['hideout-agents'])
     expect(await $.tool.call({ tool: PROGRESS, finished: true } as never)).toMatchObject({ result: 'ok: Done' })
   })
 
@@ -49,9 +49,9 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(reported).toMatchObject({ result: 'ok: Tasks 0/200' })
 
     const bar = await $.ui.mount({ plugin: PLUGIN, surface, component: 'AbovePrompt', props: band })
-    expect((await bar.find({ key: 'band-agents' }))?.props.label).toBe('×200')
+    expect((await bar.find({ key: 'hideout-agents' }))?.props.label).toBe('×200')
 
-    const ui = await $.ui.mount({ plugin: PLUGIN, surface, component: 'Pane', requestId: 'band-agents', props: pane })
+    const ui = await $.ui.mount({ plugin: PLUGIN, surface, component: 'Pane', requestId: 'hideout-agents', props: pane })
     // The desktop heading is a fold button; 200 planned rows scroll inside the Agents card, so the pane does not.
     if (surface === 'desktop') {
       expect((await ui.find({ key: 'fold-plan' }))?.props.label).toBe('▾ Planned · 200')
