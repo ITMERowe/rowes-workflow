@@ -29,7 +29,7 @@ Each plugin works on its own, so you can install just one. To install from a ter
 ## auto-route: the right model for every job
 
 - **Seven ready-made agents.** Search and reading run on **Haiku**, edits on **Sonnet**, and risky reviews and hard debugging on **Opus**. **Fable** runs only when you ask for it.
-- **Routing without asking.** Every session gets the routing rules. Every prompt gets a hidden note naming the agent and the skills that fit it.
+- **Routing without asking.** Every session gets the routing rules. Every prompt gets a hidden note naming the agent and the skills that fit it. Code work, whether writing, reviewing or auditing, gets ponytail: the smallest complete change.
 - **Cheap answers to simple questions.** Plain questions go to Haiku and technical ones to Sonnet, but only while the switch actually saves money.
 - **Opus on call.** Run `/advisor opus`, and Claude asks Opus at the hard moments instead of running on it the whole time.
 

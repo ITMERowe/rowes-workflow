@@ -91,3 +91,11 @@ test('the README examples route where it says', () => {
   expect(note('find the root cause of the flaky build')).toContain('auto-route:heavy')
   expect(note('rework the readme so it is easier to read')).not.toContain('auto-route:reader')
 })
+
+test('code work gets ponytail: writing, reviewing, auditing', () => {
+  expect(skillsFor('implement a retry helper')).toContain('ponytail:ponytail')
+  expect(skillsFor('review my PR')[0]).toBe('ponytail:ponytail-review')
+  expect(skillsFor('audit the whole repo')[0]).toBe('ponytail:ponytail-audit')
+  expect(skillsFor('list the shortcuts we took')).toContain('ponytail:ponytail-debt')
+  expect(skillsFor('what is the weather like')).toEqual([])
+})

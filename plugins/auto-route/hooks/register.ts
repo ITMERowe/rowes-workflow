@@ -47,6 +47,11 @@ const CHANGE = /\b(fix|edit|implement|build|refactor|change|add|remove|delete|re
 // shortcut: a fixed keyword table, not the session's live skill list; names a skill that is off are skipped by Claude.
 const SKILLS: [RegExp, string][] = [
   [/\b(bug|broken|error|fails?|failing|crash|regression|not working|doesn'?t work|still shows)\b/i, 'superpowers:systematic-debugging'],
+  // Code work, writing or judging it, gets ponytail: the smallest complete change, and reviews that flag bloat.
+  [/\b(audit|whole (repo|codebase)|find bloat|what can i delete|dead code)\b/i, 'ponytail:ponytail-audit'],
+  [/\b(review|critique)\b.*\b(pr|diff|change|commit|branch|code|this)\b|\bcode review\b|\bover-?engineer/i, 'ponytail:ponytail-review'],
+  [/\b(shortcuts?|tech(nical)? debt)\b/i, 'ponytail:ponytail-debt'],
+  [/\b(implement|refactor|fix|build|write|add|code|function|feature|endpoint|component|script|test)\b/i, 'ponytail:ponytail'],
   [/\b(review|audit)\b.*\b(pr|diff|change|commit|branch|code)\b|\bcode review\b/i, 'code-review'],
   [/\b(research|compare|best practice|best setup|search up|look up)\b/i, 'research'],
   [/\b(chart|graph|plot|dashboard|visuali[sz]e|sparkline)\b/i, 'dataviz'],
