@@ -20,6 +20,6 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-plugins/savvy-progress is a fork of savvy-progress by johnnyvizz
+plugins/band began as a fork of savvy-progress by johnnyvizz
 (https://github.com/JohnnyVizz/claude-kit), also MIT licensed; its original
 copyright notice belongs to its author.

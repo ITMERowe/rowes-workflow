@@ -5,7 +5,7 @@
 Two Claude Code plugins. Use one, or both:
 
 - **auto-route** sends cheap work to Haiku, hard work to Opus, and the rest to Sonnet. It does this for every prompt, with no prompting from you.
-- **savvy-progress** shows what the main session and each subagent is doing, which model it runs on, and what it costs. Each one is drawn as a pixel crab.
+- **band** shows what the main session and each subagent is doing, which model it runs on, and what it costs. Each one is drawn as a pixel crab.
 
 <p align="center"><img src="docs/crew.svg" alt="The crab crew: Tactician, Pathfinder, Ritualist, Martial Artist, Gladiator, Stormweaver, Chronomancer and Exile, each acting out its job" width="880"></p>
 
@@ -46,7 +46,7 @@ Want Opus on hand without handing the whole task to it? Run `/advisor opus`. The
 
 The table and keywords are in one file you can edit: see [auto-route's README](plugins/auto-route/README.md).
 
-## savvy-progress: the crew panel
+## band: the crew panel
 
 **The band above the prompt.** One card shows your plan's progress (tasks done of planned) and your usage left in the 7-day and 5-hour windows, with their reset times. It turns red under 20%.
 
@@ -113,19 +113,19 @@ claude plugin install auto-route@rowes-workflow
 | Plugin | From | Why |
 | --- | --- | --- |
 | `auto-route` | this repository | The routing model and its agents. |
-| `savvy-progress` | this repository | The band and the crew panel. |
-| `ribbon` | `robonuggets/ribbon` | Plan usage for the band (savvy-progress needs it). |
-| `ponytail` | `DietrichGebert/ponytail` | Smallest-change coding style (savvy-progress needs it). |
+| `band` | this repository | The band and the crew panel. |
+| `ribbon` | `robonuggets/ribbon` | Plan usage for the band (band needs it). |
+| `ponytail` | `DietrichGebert/ponytail` | Smallest-change coding style (band needs it). |
 | `caveman` | `JuliusBrussee/caveman` | Terse replies. |
 | `i-have-adhd` | `ayghri/i-have-adhd` | Answers that start with the next action. |
 | `superpowers` | `obra/superpowers-marketplace` | Process skills: planning, debugging, review. |
 | `savvy-flow` | `JohnnyVizz/claude-kit` | The `/savvy-flow` planner and its workers. |
 
-Load only one copy of savvy-progress, for example not `savvy-progress@claude-kit` alongside this one. Two copies draw two panels.
+Don't load band alongside the original `savvy-progress`: both draw a panel, so you get two.
 
 ## Developing
 
-From `plugins/auto-route` or `plugins/savvy-progress`, after each change:
+From `plugins/auto-route` or `plugins/band`, after each change:
 
 ```bash
 claude plugin validate .
@@ -137,7 +137,7 @@ claude plugin test .
 
 ## Credits
 
-- **savvy-progress** is a fork of [johnnyvizz](https://github.com/JohnnyVizz)'s savvy-progress from [claude-kit](https://github.com/JohnnyVizz/claude-kit), and keeps its author and license.
+- **band** began as a fork of [johnnyvizz](https://github.com/JohnnyVizz)'s [savvy-progress](https://github.com/JohnnyVizz/claude-kit/tree/main/plugins/savvy-progress) (MIT), renamed and reworked into its own plugin.
 - **auto-route**'s `heavy` and `fable` tiers follow the savvy-heavy and savvy-fable workers in [savvy-flow](https://github.com/JohnnyVizz/claude-kit).
 - The crab costumes are original pixel art based on *Path of Exile* and *Path of Exile 2* ascendancies. They are fan art, not affiliated with Grinding Gear Games.
 

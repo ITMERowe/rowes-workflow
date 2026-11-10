@@ -1,10 +1,10 @@
 # Plugins the installers add: <plugin>@<marketplace> <GitHub repo of that marketplace>
-# savvy-progress comes after ribbon and ponytail: it depends on them. auto-route needs none of them.
+# band comes after ribbon and ponytail: it depends on them. auto-route needs none of them.
 ribbon@robonuggets robonuggets/ribbon
 ponytail@ponytail DietrichGebert/ponytail
 caveman@caveman JuliusBrussee/caveman
 i-have-adhd@i-have-adhd ayghri/i-have-adhd
 superpowers@superpowers-marketplace obra/superpowers-marketplace
 savvy-flow@claude-kit JohnnyVizz/claude-kit
-savvy-progress@rowes-workflow ITMERowe/rowes-workflow
+band@rowes-workflow ITMERowe/rowes-workflow
 auto-route@rowes-workflow ITMERowe/rowes-workflow

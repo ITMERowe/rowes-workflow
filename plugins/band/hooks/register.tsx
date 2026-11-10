@@ -3,24 +3,24 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { AgentRun, BgTask, Flow, Panel, Phase, PlannedTask, Quad, SkillKind, SkillUse, Split, Task, TaskStatus, WorkItem, WorkKind } from '../types'
 
-const flow = atom({ plugin: 'savvy-progress', key: 'flow' } as const, null)
-const agents = atom({ plugin: 'savvy-progress', key: 'agents' } as const, [])
-const panel = atom({ plugin: 'savvy-progress', key: 'panel' } as const, {
+const flow = atom({ plugin: 'band', key: 'flow' } as const, null)
+const agents = atom({ plugin: 'band', key: 'agents' } as const, [])
+const panel = atom({ plugin: 'band', key: 'panel' } as const, {
   isCompact: false,
   isDoneCollapsed: false,
   autoOpenedFor: '',
 })
-const now = atom({ plugin: 'savvy-progress', key: 'now' } as const, 0)
-const bg = atom({ plugin: 'savvy-progress', key: 'bg' } as const, [])
-const work = atom({ plugin: 'savvy-progress', key: 'work' } as const, [])
-const tasks = atom({ plugin: 'savvy-progress', key: 'tasks' } as const, [])
-const kit = atom({ plugin: 'savvy-progress', key: 'kit' } as const, [])
+const now = atom({ plugin: 'band', key: 'now' } as const, 0)
+const bg = atom({ plugin: 'band', key: 'bg' } as const, [])
+const work = atom({ plugin: 'band', key: 'work' } as const, [])
+const tasks = atom({ plugin: 'band', key: 'tasks' } as const, [])
+const kit = atom({ plugin: 'band', key: 'kit' } as const, [])
 // Plugins whose SessionStart hook added context: on for the whole session, so each prompt counts as their use.
-const modes = atom({ plugin: 'savvy-progress', key: 'modes' } as const, [])
+const modes = atom({ plugin: 'band', key: 'modes' } as const, [])
 // When the main session's last turn ended: its work before then is no longer live.
-const mainIdleAt = atom({ plugin: 'savvy-progress', key: 'mainIdleAt' } as const, 0)
+const mainIdleAt = atom({ plugin: 'band', key: 'mainIdleAt' } as const, 0)
 const NO_SPLIT: Split = { requests: 0, tokens: [0, 0, 0, 0], usd: [0, 0, 0, 0] }
-const mainSplit = atom({ plugin: 'savvy-progress', key: 'mainSplit' } as const, NO_SPLIT)
+const mainSplit = atom({ plugin: 'band', key: 'mainSplit' } as const, NO_SPLIT)
 // ribbon's plan windows, for the band's USAGE row.
 const windows = atom({ plugin: 'ribbon', key: 'windows' } as const, [])
 type UsageWindow = { kind: string; percentUsed: number; resetsAt?: string }
@@ -34,15 +34,15 @@ function routeModel<T extends { background: boolean; fork: boolean; model?: stri
   return { ...e, model: e.subagentType === 'Explore' ? 'haiku' : 'sonnet' }
 }
 
-const TOOL = 'mcp__savvy-progress__progress'
-const STEP_TOOL = 'mcp__savvy-progress__step'
+const TOOL = 'mcp__band__progress'
+const STEP_TOOL = 'mcp__band__step'
 // Added to the end of each savvy worker's brief. Their system prompt words step
 // reporting as a condition ("if the step tool appears among your tools") and they
 // skip it even with the tool listed; the same request in the brief is followed.
 const STEP_BRIEF = `
 
 Progress reporting: before any other work, call \`${STEP_TOOL}\` with \`total\` (your plan in 3-8 steps) and \`done: 0\`; call it again with \`done\` and a few-word \`note\` as each step finishes. It only draws a progress bar.`
-const PANE = 'savvy-agents'
+const PANE = 'band-agents'
 
 // Each desktop card's box in pane px and how far it scrolls (in items).
 type CardRect = { key: string; x: number; y: number; w: number; h: number; max: number; step: number }
@@ -348,7 +348,7 @@ const fitText = (s: string, size: number, maxW: number): string => {
   return out + '…'
 }
 
-// The savvy pixel bar, the band's rows: a dithered fill,
+// The pixel bar, the band's rows: a dithered fill,
 // sparse at the start and dense toward the head, a faint layer for work handed out,
 // ticks between tasks, and a pill with the count riding the head. Pixels twinkle in
 // four out-of-phase groups; a calm bar (finished) settles to a slow glow.
@@ -491,7 +491,7 @@ ${inner.join('\n')}
 </svg>`
 }
 
-// The terminal's bar: savvy-progress's block bar.
+// The terminal's bar: the band's block bar.
 const blocks = (r: number, cells: number): string => {
   const n = Math.max(0, Math.min(cells, Math.round(r * cells)))
   return '█'.repeat(n) + '░'.repeat(cells - n)
@@ -1171,7 +1171,7 @@ const SKILL_SCALE = 0.7
 const SKILL_ROW_H = 38
 const SKILL_MAX = 14
 // Tools of the app itself and of this plugin are not skills the person added.
-const SKIP_SERVERS = /^(ccd_|savvy-progress$|claude_ai_)/
+const SKIP_SERVERS = /^(ccd_|band$|claude_ai_)/
 
 // What a tool call says about a skill or plugin in use, or null for any other call.
 export const kitOf = (tool: string, e: Record<string, unknown>): [kind: SkillKind, name: string] | null => {
@@ -1284,7 +1284,7 @@ const enabledPlugins = async ($: EngineInterface): Promise<string[]> => {
     return Object.entries(st.enabledPlugins ?? {})
       .filter(([, on]) => on === true)
       .map(([k]) => k.split('@')[0] ?? k)
-      .filter(n => n !== 'savvy-progress')
+      .filter(n => n !== 'band')
   } catch {
     return []
   }
@@ -2261,8 +2261,8 @@ export const register: Register = (on, options) => {
     const isWorking = list.some(a => a.status === 'running')
     // The clock is read only for the usage resets: a band without them needs no clock.
     const at = ws.length ? await $.clock.now() : 0
-    const crewButton = <Button key="savvy-agents" label={`×${crew}`} plain onPress={() => void togglePane($)} />
-    const dismiss = f && <Button key="savvy-dismiss" label="✕" plain role="dismiss" onPress={() => update($, flow, () => null)} />
+    const crewButton = <Button key="band-agents" label={`×${crew}`} plain onPress={() => void togglePane($)} />
+    const dismiss = f && <Button key="band-dismiss" label="✕" plain role="dismiss" onPress={() => update($, flow, () => null)} />
     const percent = f ? `${Math.round(ratio(f) * 100)}%` : ''
     const usageAlt = ws.map(w => `${windowName(w.kind)} ${Math.max(0, Math.round(100 - w.percentUsed))}% left`).join(', ')
 

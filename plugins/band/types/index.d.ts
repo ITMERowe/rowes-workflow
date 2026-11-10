@@ -107,7 +107,7 @@ export type BgTask = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'savvy-progress': {
+    'band': {
       flow: Flow | null
       agents: AgentRun[]
       bg: BgTask[]

@@ -39,4 +39,4 @@ The notes come from a keyword list, so some prompts will match the wrong row or 
 
 ## Credits
 
-The routing tiers come from [savvy-flow](https://github.com/JohnnyVizz/claude-kit) by JohnnyVizz: `heavy` and `fable` follow its savvy-heavy and savvy-fable workers. If [savvy-progress](https://github.com/ITMERowe/rowes-workflow/tree/main/plugins/savvy-progress) is installed, its agents panel shows these agents with their models. Neither plugin is needed.
+The routing tiers come from [savvy-flow](https://github.com/JohnnyVizz/claude-kit) by JohnnyVizz: `heavy` and `fable` follow its savvy-heavy and savvy-fable workers. If [band](https://github.com/ITMERowe/rowes-workflow/tree/main/plugins/band) is installed, its agents panel shows these agents with their models. Neither plugin is needed.

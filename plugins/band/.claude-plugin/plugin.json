@@ -1,0 +1,41 @@
+{
+  "name": "band",
+  "version": "2.0.0",
+  "description": "One band above the prompt (plan progress and usage left) and a crew panel (/agents-info): every subagent as a pixel crab, background tasks, the task list, cost and tokens, and the skills and plugins in use.",
+  "dependencies": [
+    "ponytail@ponytail",
+    "ribbon@robonuggets"
+  ],
+  "author": {
+    "name": "ITMERowe",
+    "url": "https://github.com/ITMERowe"
+  },
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "language": {
+      "type": "string",
+      "title": "Panel language",
+      "description": "auto follows Claude Code's language setting, then the system locale; en, ru or he (Hebrew, drawn right to left)",
+      "default": "auto",
+      "options": [
+        "auto",
+        "en",
+        "ru",
+        "he"
+      ]
+    },
+    "autoOpen": {
+      "type": "string",
+      "title": "Open the agents panel",
+      "description": "workers: when a planned worker starts or a plan is reported; any: also when any other subagent starts",
+      "default": "workers",
+      "options": [
+        "workers",
+        "any"
+      ]
+    }
+  },
+  "homepage": "https://github.com/ITMERowe/rowes-workflow/tree/main/plugins/band",
+  "repository": "https://github.com/ITMERowe/rowes-workflow",
+  "license": "MIT"
+}

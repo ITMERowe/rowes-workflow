@@ -3,12 +3,12 @@
   "owner": {
     "name": "Rowe"
   },
-  "description": "Rowe's Claude Code workflow: the savvy-progress band and agents panel, and routing agents.",
+  "description": "Rowe's Claude Code workflow: the auto-route model routing and the band crew panel.",
   "plugins": [
     {
-      "name": "savvy-progress",
-      "source": "./plugins/savvy-progress",
-      "description": "Band above the prompt (flow and plan usage), agents panel (/agents-info) with skills and plugins in use, and background-agent model routing."
+      "name": "band",
+      "source": "./plugins/band",
+      "description": "The band above the prompt (plan progress and usage left) and the crew panel (/agents-info), with every subagent as a pixel crab."
     },
     {
       "name": "auto-route",

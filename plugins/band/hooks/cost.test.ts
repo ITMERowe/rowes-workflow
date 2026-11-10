@@ -3,7 +3,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import { addRequest, costTip, tokensTip, totals } from './register'
 
-const PLUGIN = 'savvy-progress'
+const PLUGIN = 'band'
 const pane = { title: '', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} } as const
 
 type Usage = { input_tokens: number; output_tokens: number; cache_read_input_tokens: number; cache_creation_input_tokens: number }
@@ -28,7 +28,7 @@ const step = async ($: Engine, model: string) => {
 }
 
 const shows = async ($: Engine, text: RegExp) => {
-  const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'Pane', requestId: 'savvy-agents', props: pane })
+  const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'Pane', requestId: 'band-agents', props: pane })
   return ui.find({ type: 'Text', text })
 }
 
