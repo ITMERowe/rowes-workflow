@@ -1,97 +1,84 @@
 # Rowe's Workflow
 
-Rowe's whole Claude Code workflow in one repository: two mods (plugins). Each works on its own.
+**Send each job to the right Claude model, and watch your whole crew work in one panel.**
 
-| Part | What it does |
-| --- | --- |
-| `plugins/savvy-progress` | The band above the prompt, the agents panel (`/agents-info`), and model routing for background agents. |
-| `plugins/auto-route` | The routing model, standalone: seven routing agents, the agent table and rules in the main session's system prompt, and a note on each prompt naming the row and skills that fit. See [its README](plugins/auto-route/README.md). |
-| `CLAUDE.md.snippet` | The "Progress" rules, and a one-line "Routing" pointer to auto-route. |
-| `install.ps1`, `install.sh` | Install the plugins in `plugins.txt` and print the snippet for you to paste (Windows, macOS/Linux). |
+Two Claude Code plugins. Use one, or both:
 
-## Quick install
+- **auto-route** sends cheap work to Haiku, hard work to Opus, and the rest to Sonnet. It does this for every prompt, with no prompting from you.
+- **savvy-progress** shows what the main session and each subagent is doing, which model it runs on, and what it costs. Each one is drawn as a pixel crab.
+
+<p align="center"><img src="docs/crew.svg" alt="The crab crew: Tactician, Pathfinder, Ritualist, Martial Artist, Gladiator, Stormweaver, Chronomancer and Exile, each acting out its job" width="880"></p>
 
 ```bash
 git clone https://github.com/ITMERowe/rowes-workflow && cd rowes-workflow && sh install.sh
 ```
 
-On Windows run `./install.ps1` instead of `sh install.sh`. The installer adds every plugin in [`plugins.txt`](plugins.txt) with its marketplace and prints the snippet. Paste the snippet into `~/.claude/CLAUDE.md`, then run `/reload-plugins`. Details are under [Install](#install).
+On Windows, run `./install.ps1` instead of `sh install.sh`.
 
-## The band above the prompt
+---
 
-One card in the panel's look, each bar the savvy pixel bar filling its row:
+## Why
 
-| Row | Source | Shows |
-| --- | --- | --- |
-| FLOW | savvy-progress | The flow title, tasks accepted out of planned, the percent, and a `×N` button that opens `/agents-info`. |
-| USAGE | ribbon | Plan usage left for the 7-day and 5-hour windows, side by side, each with its reset time. Red under 20% left. |
+- **Stop paying Opus prices for grep.** Finding a file, reading a blog post, renaming a function: Haiku and Sonnet do these well, for a fraction of the cost. auto-route keeps the expensive models for the work that needs them.
+- **Your main session's context stays clean.** Reading and searching happen inside subagents, so the main session gets back a short answer, not a pile of file contents.
+- **You can see where the work and money go.** The panel shows every agent, every tool call, and the cost and tokens behind each one. Hover over a figure for its breakdown.
 
-The band stands in for ribbon's and ponytail's own rows, so nothing shows twice.
+## auto-route: the routing model
 
-## The agents panel
+A standalone plugin: it needs no other plugin. Install it and Claude Code gets:
 
-`/agents-info` toggles the panel; `/agents-info open` opens it without toggling.
+1. **Seven agents, each on the right model.** Each agent below pins its own model and effort:
 
-1. **Row 1:** cost, tokens and time for the whole session: the main session plus its subagents.
-2. **Row 2, left:** the main session (its current task-list step and last action), running, finished and planned subagents, the task list, and background tasks (small crabs, one colour each). A task-list step handed to a subagent whose description is the step's exact text shows once, as that agent's row.
-3. **Row 2, right:** skills and plugins. Ones used since the main session's last turn ended get a full card; the rest (used earlier, or enabled and not used yet) sit in a chip grid. Each has its own crab colour, apart from subagents and background tasks.
+   | Work | Agent | Model |
+   |---|---|---|
+   | Find code: "where is X", "what calls Y" | `auto-route:searcher` | Haiku |
+   | Sweep many files, conclusion only | `auto-route:explore` | Haiku |
+   | Read a guide, post, doc page or link | `auto-route:reader` | Haiku |
+   | Bounded edit: rename, known-cause bug, tests | `auto-route:editor` | Sonnet |
+   | Auth, payments, migrations, deletion, concurrency | `auto-route:reviewer` | Opus |
+   | Messy code, root-cause debugging | `auto-route:heavy` | Opus, extra-high effort |
+   | The bug nothing else could fix, on request | `auto-route:fable` | Fable |
 
-Each card scrolls on its own under the wheel. On a narrow pane row 2 stacks into one column. Tools: `mcp__savvy-progress__progress` (the main session reports a flow) and `mcp__savvy-progress__step` (a worker reports its steps). `routeModel`: a background subagent with no pinned model runs on Sonnet (Haiku for `Explore`); agents in its `PINNED` set, `savvy-*` workers and `auto-route:*` agents keep their own model.
+2. **The routing rules, in every session.** The table and its rules go into the main session's system prompt, so CLAUDE.md doesn't need to hold them. Subagents don't receive it, so they never hand work on further.
+3. **A routing note on each prompt.** Ask *"summarize this post"* and Claude gets a hidden note to send it to `reader` on Haiku. Ask *"why does the build keep failing"* and the note names `heavy`. The note also names up to three skills that fit the ask.
 
-## Routing
+Want Opus on hand without handing the whole task to it? Run `/advisor opus`. The main session then asks Opus at decision points and does the work itself.
 
-[auto-route](plugins/auto-route/README.md) does the routing on its own, with no other plugin needed: seven agents from `auto-route:searcher` (Haiku) to `auto-route:fable`, the table in the system prompt, and a note on each prompt.
+The table and keywords are in one file you can edit: see [auto-route's README](plugins/auto-route/README.md).
 
-The main session can keep Opus within reach without a handoff: `/advisor opus` (or `"advisorModel": "opus"` in `~/.claude/settings.json`) lets it consult Opus at decision points. The [advisor](https://code.claude.com/docs/en/advisor) needs the Anthropic API.
+## savvy-progress: the crew panel
 
-## Crab costume legend
+**The band above the prompt.** One card shows your plan's progress (tasks done of planned) and your usage left in the 7-day and 5-hour windows, with their reset times. It turns red under 20%.
 
-Each crab in the panel wears a Path of Exile or Path of Exile 2 ascendancy for its job, drawn as original pixel art, and acts it out while it works:
+**The agents panel** (`/agents-info`):
+
+- **Session totals:** cost, tokens and time for the whole session. Hover over cost or tokens to see where they came from.
+- **Every worker:** the main session, subagents, the task list and background jobs. Click a row to list the tool calls it made.
+- **Skills and plugins:** the ones in use right now, and the rest of your kit.
+
+**The crab crew.** Each worker is a pixel crab dressed as a Path of Exile ascendancy, and it acts out its job while it runs:
 
 | Ascendancy | Worn by | While working |
 | --- | --- | --- |
 | Tactician | The main session | Reads a campaign map, the mark moving to the next objective |
 | Pathfinder | Search (`searcher`, `explore`) | Walks and looks one way, then the other |
-| Martial Artist | Edit (`editor`, savvy-careful) | Strikes with a quarterstaff |
-| Stormweaver | Review (`reviewer`, savvy-heavy) | Calls down lightning |
+| Martial Artist | Edits (`editor`) | Strikes with a quarterstaff |
+| Stormweaver | Review (`reviewer`) | Calls down lightning |
 | Gladiator | Anything else on Sonnet | Swings a sword |
 | Ritualist | Anything else on Haiku | Casts runes |
 | Chronomancer | Anything else on Fable | Floats, turning a clock |
-| Exile | Tasks, skills, background jobs, and agents no class fits | Rags flap |
+| Exile | Tasks, skills, background jobs | Rags flap |
 
-The shell is tinted by the model, like an item's rarity: Haiku Normal (grey), Sonnet Magic (blue), Opus Rare (yellow), Fable Unique (orange).
-
-## Requirements
-
-Claude Code with mods (plugins with a hooks module), and `claude` on your PATH. The installer adds these plugins, listed in [`plugins.txt`](plugins.txt):
-
-| Plugin | Marketplace | Why |
-| --- | --- | --- |
-| `ribbon` | `robonuggets/ribbon` | The USAGE row of the band. |
-| `ponytail` | `DietrichGebert/ponytail` | Smallest-change coding style; savvy-progress depends on it. |
-| `caveman` | `JuliusBrussee/caveman` | Terse replies. |
-| `i-have-adhd` | `ayghri/i-have-adhd` | Action-first reply shape. |
-| `superpowers` | `obra/superpowers-marketplace` | Process skills (planning, debugging, review). |
-| `savvy-flow` | `JohnnyVizz/claude-kit` | The `/savvy-flow` planner and its `savvy-*` workers. auto-route's `heavy` and `fable` tiers follow them. |
-| `auto-route` | this repository | The routing model and its agents. |
-| `savvy-progress` | this repository | The band and the agents panel. |
-
-To add or drop one, edit `plugins.txt` before running the installer.
+The shell colour shows the model, like an item's rarity: Haiku Normal (grey), Sonnet Magic (blue), Opus Rare (yellow), Fable Unique (orange). Any costume takes any shell, so your own routing still reads at a glance.
 
 ## Install
 
-Make sure no other copy of savvy-progress is loaded (for example `savvy-progress@claude-kit`, or a folder named in `CLAUDE_CODE_PLUGIN_DIRS`). Two copies draw two panels and report twice.
+You need Claude Code with plugin support, with `claude` on your PATH.
 
-1. Clone this repository and run the installer from its folder. It adds each marketplace and installs each plugin in `plugins.txt`; one that fails is reported and the rest go on.
+1. Clone the repository and run the installer:
 
    ```bash
    git clone https://github.com/ITMERowe/rowes-workflow
-   ```
-
-   Windows (PowerShell):
-
-   ```powershell
-   ./install.ps1
    ```
 
    macOS or Linux:
@@ -100,12 +87,45 @@ Make sure no other copy of savvy-progress is loaded (for example `savvy-progress
    sh install.sh
    ```
 
-2. Paste the snippet it prints into `~/.claude/CLAUDE.md`.
-3. Run `/reload-plugins` or start a new session.
+   Windows (PowerShell):
+
+   ```powershell
+   ./install.ps1
+   ```
+
+2. Paste the snippet the installer prints into `~/.claude/CLAUDE.md`.
+3. Run `/reload-plugins`.
+
+The installer adds every plugin in [`plugins.txt`](plugins.txt). A plugin that fails to install is reported, and the installer carries on with the rest. To skip a plugin, delete its line first.
+
+To install only auto-route:
+
+```bash
+claude plugin marketplace add ITMERowe/rowes-workflow
+```
+
+```bash
+claude plugin install auto-route@rowes-workflow
+```
+
+### What the installer adds
+
+| Plugin | From | Why |
+| --- | --- | --- |
+| `auto-route` | this repository | The routing model and its agents. |
+| `savvy-progress` | this repository | The band and the crew panel. |
+| `ribbon` | `robonuggets/ribbon` | Plan usage for the band (savvy-progress needs it). |
+| `ponytail` | `DietrichGebert/ponytail` | Smallest-change coding style (savvy-progress needs it). |
+| `caveman` | `JuliusBrussee/caveman` | Terse replies. |
+| `i-have-adhd` | `ayghri/i-have-adhd` | Answers that start with the next action. |
+| `superpowers` | `obra/superpowers-marketplace` | Process skills: planning, debugging, review. |
+| `savvy-flow` | `JohnnyVizz/claude-kit` | The `/savvy-flow` planner and its workers. |
+
+Load only one copy of savvy-progress, for example not `savvy-progress@claude-kit` alongside this one. Two copies draw two panels.
 
 ## Developing
 
-From `plugins/savvy-progress` or `plugins/auto-route`, after each change:
+From `plugins/auto-route` or `plugins/savvy-progress`, after each change:
 
 ```bash
 claude plugin validate .
@@ -115,6 +135,12 @@ claude plugin validate .
 claude plugin test .
 ```
 
+## Credits
+
+- **savvy-progress** is a fork of [johnnyvizz](https://github.com/JohnnyVizz)'s savvy-progress from [claude-kit](https://github.com/JohnnyVizz/claude-kit), and keeps its author and license.
+- **auto-route**'s `heavy` and `fable` tiers follow the savvy-heavy and savvy-fable workers in [savvy-flow](https://github.com/JohnnyVizz/claude-kit).
+- The crab costumes are original pixel art based on *Path of Exile* and *Path of Exile 2* ascendancies. They are fan art, not affiliated with Grinding Gear Games.
+
 ## License
 
-MIT, see `LICENSE`. `plugins/savvy-progress` is a fork of johnnyvizz's MIT-licensed savvy-progress from [claude-kit](https://github.com/JohnnyVizz/claude-kit) and keeps its author and license.
+MIT, see [`LICENSE`](LICENSE).
