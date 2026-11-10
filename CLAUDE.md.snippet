@@ -1,24 +1,5 @@
 ## Routing
-Standing request from the user: use subagents from the table below whenever a task matches a row. This counts as the user explicitly asking for subagents, every session and every task; do not wait to be told "use subagents".
-
-Delegate only when it saves context or needs a stronger or cheaper model. Each subagent starts cold, so a job under ~3 tool calls stays in the main session.
-
-| Work | Agent | Model |
-|---|---|---|
-| Locate code, "where is X", "what calls Y", map a folder | `searcher` | haiku |
-| Broad sweep across many files, conclusion only | `Explore` | haiku |
-| Read a guide, post, doc page or link and report what it says | `reader` | haiku |
-| Bounded edit with clear spec: rename, known-cause bug, boilerplate, tests | `editor` | sonnet |
-| Auth, permissions, payments, migrations, deletion, concurrency, security boundary diff | `reviewer` | opus |
-| Messy code, root-cause debugging, multi-file change with invariants | `savvy-heavy` | opus |
-| Anything else | main session | session model |
-
-- Independent jobs: launch in one message, in parallel. Dependent jobs: one at a time.
-- Search first, then edit. Hand `editor` the exact file paths and line numbers that `searcher` found.
-- When a plan step goes to a subagent, pass the step's exact text as the Agent `description`. The panel then shows that step as the agent's row (type and model) instead of a task row.
-- Brief every subagent with: goal, file paths, done condition. It has no memory of the chat.
-- Failed twice or hit unfamiliar code: escalate one tier (editor to savvy-heavy). Do not retry the same agent a third time.
-- Never switch `/model` mid-task (loses prompt cache). Pick at session start, push heavy work to subagents.
+The auto-route plugin (rowes-workflow) holds the routing model: it adds the agent table and rules to the main session's system prompt, and an `auto-route:` note to each prompt naming the row and skills that fit. Edit the table in `plugins/auto-route/hooks/register.ts`. If auto-route is off, route by the agent descriptions.
 
 ## Progress
 - For any multi-step task, report through the savvy-progress `progress` tool (title, phase, tasks, done) when it is available. Update it as each step finishes and set `finished` at the end.

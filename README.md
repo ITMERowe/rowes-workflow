@@ -5,9 +5,9 @@ Rowe's whole Claude Code workflow in one repository: two mods (plugins) and five
 | Part | What it does |
 | --- | --- |
 | `plugins/savvy-progress` | The band above the prompt, the agents panel (`/agents-info`), and model routing for background agents. |
-| `plugins/auto-route` | Reads each prompt and adds a routing note: a read-only ask (a guide, post or link) goes to `reader` on Haiku, and the skills that fit the ask are named. |
+| `plugins/auto-route` | The routing model: puts the agent table and rules in the main session's system prompt, and adds a note to each prompt naming the row (searcher, Explore, reader, editor, reviewer, savvy-heavy, savvy-fable) and the skills that fit. |
 | `agents/` | `searcher`, `Explore`, `reader`, `editor` and `reviewer` subagents, each pinned to a model tier. `Explore` replaces the built-in one, which now runs on the session model. |
-| `CLAUDE.md.snippet` | The "Routing" and "Progress" rules that tell Claude when to use each agent and tool. |
+| `CLAUDE.md.snippet` | The "Progress" rules, and a one-line "Routing" pointer to auto-route. |
 | `install.ps1`, `install.sh` | Install the plugins in `plugins.txt`, copy `agents/*.md` to `~/.claude/agents`, and print the snippet for you to paste (Windows, macOS/Linux). |
 
 ## Quick install
