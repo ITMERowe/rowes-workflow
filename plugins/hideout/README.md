@@ -2,7 +2,7 @@
 
 Your crew's hideout in Claude Code. A plugin with two parts: a band above the prompt, and a live panel for the main session and each of its subagents. More game features are on the way.
 
-- **The band:** one card above the prompt. It shows the plan's title, tasks done out of planned and the percent, plus the usage left in your 7-day and 5-hour windows with their reset times. It replaces ribbon's and ponytail's own rows, so nothing shows twice. A `×N` button opens the panel.
+- **The band:** one card above the prompt. It shows the plan's title, tasks done out of planned and the percent, plus the usage left in your 7-day and 5-hour windows with their reset times. It replaces ribbon's and ponytail's own rows, so nothing shows twice. A button with the agent count opens the panel.
 - **The crew panel** (`/agents-info` toggles it; `/agents-info open` opens it without toggling):
   - Session totals: cost, tokens and time. Hover over cost or tokens to see where they came from.
   - Every worker: the main session, running, finished and planned subagents, the task list and background tasks, each with its model, effort, progress, context and cost. Click a row's `▸ N` to list its tool calls.

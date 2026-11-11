@@ -1,6 +1,7 @@
 import type { On } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
+import type { Split } from '../types'
 import { addRequest, costTip, tokensTip, totals } from './register'
 
 const PLUGIN = 'hideout'
@@ -57,6 +58,15 @@ for (const [model, shown] of PRICED) {
   })
 }
 
+// A run whose steps went unseen is priced from its turn's sum; the header counts that sum too.
+test('cost: a turn priced from its sum reaches the header', async ($, on) => {
+  await worker($, on, 'claude-opus-5-5')
+  await ($.turn.complete as (e: unknown) => Promise<unknown>)({ agentId: 'a1', reason: 'answer', answer: 'ok', usage: { model: 'claude-opus-5-5', ...TURN } })
+  const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'Pane', requestId: 'hideout-agents', props: pane })
+  expect(await ui.find({ type: 'Text', text: /≈\$32\.4 \d/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /≈\$32\.4 · 5\.0M tokens/ })).toBeTruthy()
+})
+
 // Haiku 5.5 is priced by prompt length, per request: 120K of prompt is over the 100K line.
 const LONG: Usage = { input_tokens: 20_000, output_tokens: 10_000, cache_read_input_tokens: 50_000, cache_creation_input_tokens: 50_000 }
 
@@ -85,12 +95,27 @@ for (const [model, percent] of [['claude-haiku-5-5', 13], ['claude-haiku-4-5', 6
 
 test('the header counts the main session too, not only subagents', () => {
   const a = { id: 't1', agentId: 'a1', type: 'editor', description: 'x', model: 'claude-sonnet-5-5', status: 'done' as const, startedAt: 5_000, endedAt: 6_000, contextTokens: 0, contextMax: 1, tokens: 100, costUsd: 0.5, steps: 1, round: 1 }
+  // The subagents' requests, summed apart from the list.
+  const sub: Split = { requests: 1, tokens: [100, 0, 0, 0], usd: [0.5, 0, 0, 0] }
   // No subagents: the session's own cost, tokens and time.
   expect(totals([], 10_000, { costUsd: 1.25, startedAt: 4_000, tokens: 900 })).toEqual({ cost: 1.25, tokens: 900, time: 6_000 })
   // With one: tokens add up, cost is the session's (it holds the subagent's), time runs from the session's start.
-  expect(totals([a], 10_000, { costUsd: 2, startedAt: 4_000, tokens: 900 })).toEqual({ cost: 2, tokens: 1000, time: 6_000 })
+  expect(totals([a], 10_000, { costUsd: 2, startedAt: 4_000, tokens: 900 }, sub)).toEqual({ cost: 2, tokens: 1000, time: 6_000 })
   // No session figures: the subagents alone, as before.
-  expect(totals([a], 10_000)).toEqual({ cost: 0.5, tokens: 100, time: 1_000 })
+  expect(totals([a], 10_000, {}, sub)).toEqual({ cost: 0.5, tokens: 100, time: 1_000 })
+  // The list reset or trimmed: their tokens and cost still count.
+  expect(totals([], 10_000, {}, sub)).toEqual({ cost: 0.5, tokens: 100, time: 0 })
+})
+
+test('a new flow clears finished rows, not their tokens from the header', async ($, on) => {
+  await worker($, on, 'claude-haiku-4-5', LONG)
+  await step($, 'claude-haiku-4-5')
+  await ($.turn.complete as (e: unknown) => Promise<unknown>)({ agentId: 'a1', reason: 'answer', answer: 'ok' })
+  await $.tool.call({ tool: 'mcp__hideout__progress', title: 'Next flow', phase: 'delegate', total: 1 } as never)
+  const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'Pane', requestId: 'hideout-agents', props: pane })
+  expect(await ui.find({ type: 'Text', text: /Priced work/ })).toBeFalsy()
+  // 130K tokens at ≈$0.175, as the step reported them.
+  expect(await ui.find({ type: 'Text', text: /≈\$0\.1[78] · 130k tokens/ })).toBeTruthy()
 })
 
 test('tooltips: main session split by token kind, then subagents', () => {

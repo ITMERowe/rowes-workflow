@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { AgentRun, BgTask, Flow, Panel, Phase, PlannedTask, Quad, SkillKind, SkillUse, Split, Task, TaskStatus, WorkItem, WorkKind } from '../types'
+import type { AgentRun, BgTask, Flow, Phase, PlannedTask, Quad, SkillKind, SkillUse, Split, Task, TaskStatus, WorkItem, WorkKind } from '../types'
 
 const flow = atom({ plugin: 'hideout', key: 'flow' } as const, null)
 const agents = atom({ plugin: 'hideout', key: 'agents' } as const, [])
@@ -21,6 +21,10 @@ const modes = atom({ plugin: 'hideout', key: 'modes' } as const, [])
 const mainIdleAt = atom({ plugin: 'hideout', key: 'mainIdleAt' } as const, 0)
 const NO_SPLIT: Split = { requests: 0, tokens: [0, 0, 0, 0], usd: [0, 0, 0, 0] }
 const mainSplit = atom({ plugin: 'hideout', key: 'mainSplit' } as const, NO_SPLIT)
+// Every subagent request of the session, kept apart from the agents list so the totals never drop when rows go.
+const subSplit = atom({ plugin: 'hideout', key: 'subSplit' } as const, NO_SPLIT)
+// Enabled plugins from settings, read at SessionStart and each prompt, so a redraw reads no settings.
+const enabled = atom({ plugin: 'hideout', key: 'enabled' } as const, [])
 // ribbon's plan windows, for the band's USAGE row.
 const windows = atom({ plugin: 'ribbon', key: 'windows' } as const, [])
 type UsageWindow = { kind: string; percentUsed: number; resetsAt?: string }
@@ -70,7 +74,7 @@ const MAX_TASKS = 200
 const MAX_AFTER = 20
 const MAX_TITLE = 120
 const ACCENT = '#8f8cf4'
-const DONE = '#5fbf8f'
+const DONE = '#3B9C5F'
 
 type ProgressInput = {
   title?: string
@@ -128,6 +132,12 @@ const STRINGS = {
     cacheRead: 'cache reads',
     cacheWrite: 'cache writes',
     more: 'more',
+    isFailed: 'failed',
+    kit: 'Skills & plugins',
+    kitEmpty: 'No skills or plugins seen yet.',
+    noTasks: 'No task list yet.',
+    active: 'active',
+    notActive: 'not active',
     tier: { light: 'light', medium: 'medium', careful: 'careful', heavy: 'heavy', fable: 'fable', other: 'other' },
     effort: { low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', max: 'max' },
   },
@@ -171,6 +181,12 @@ const STRINGS = {
     cacheRead: 'чтение кэша',
     cacheWrite: 'запись кэша',
     more: 'ещё',
+    isFailed: 'сбой',
+    kit: 'Навыки и плагины',
+    kitEmpty: 'Навыков и плагинов пока нет.',
+    noTasks: 'Списка задач пока нет.',
+    active: 'активны',
+    notActive: 'не активны',
     tier: { light: 'light', medium: 'medium', careful: 'careful', heavy: 'heavy', fable: 'fable', other: 'other' },
     effort: { low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', max: 'max' },
   },
@@ -214,6 +230,12 @@ const STRINGS = {
     cacheRead: 'קריאות מטמון',
     cacheWrite: 'כתיבות מטמון',
     more: 'נוספים',
+    isFailed: 'נכשל',
+    kit: 'מיומנויות ותוספים',
+    kitEmpty: 'עדיין אין מיומנויות או תוספים.',
+    noTasks: 'עדיין אין רשימת משימות.',
+    active: 'פעילים',
+    notActive: 'לא פעילים',
     tier: { light: 'קל', medium: 'בינוני', careful: 'זהיר', heavy: 'כבד', fable: 'פייבל', other: 'אחר' },
     effort: { low: 'נמוך', medium: 'בינוני', high: 'גבוה', xhigh: 'גבוה מאוד', max: 'מקסימלי' },
   },
@@ -229,6 +251,13 @@ const isRtl = () => lang === 'he'
 // Tier and effort words as shown; anything unknown shows as it came.
 const tierWord = (tier: string): string => (tr().tier as Record<string, string>)[tier] ?? tier
 const effortWord = (effort: string): string => (tr().effort as Record<string, string>)[effort] ?? effort
+// A run's, job's or task's status as words, for alt text.
+const statusWord = (status: string): string => {
+  const s = tr()
+  if (status === 'running' || status === 'in_progress') return s.isRunning
+  if (status === 'failed') return s.isFailed
+  return status === 'done' || status === 'completed' ? s.isFinished : s.isPlanned
+}
 
 const isRussian = (v: unknown): boolean => typeof v === 'string' && /^(ru|russian|рус)/i.test(v.trim())
 const isHebrew = (v: unknown): boolean => typeof v === 'string' && /^(he|iw|hebrew|עברית)/i.test(v.trim())
@@ -256,8 +285,12 @@ const blank = (): Flow => ({
   tasks: [],
 })
 
+// Tool input comes from the model, whatever its schema says: a field of the wrong type reads as absent.
+const str = (v: unknown): string => (typeof v === 'string' ? v : '')
+const num = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : undefined)
+
 const isNewFlow = (prev: Flow | null, input: ProgressInput): boolean =>
-  !prev || prev.isFinished || (input.title !== undefined && clip(input.title.trim(), MAX_TITLE) !== prev.title)
+  !prev || prev.isFinished || (typeof input.title === 'string' && clip(input.title.trim(), MAX_TITLE) !== prev.title)
 
 // Only a known tier is kept: the name is later a key into the tier tables.
 const tierName = (v: string): string => {
@@ -265,26 +298,28 @@ const tierName = (v: string): string => {
   return TIERS.includes(t) ? t : ''
 }
 
-const cleanTasks = (tasks: ProgressInput['tasks']): PlannedTask[] | undefined =>
-  tasks
-    ?.filter(t => t.title?.trim())
-    .slice(0, MAX_TASKS)
-    .map(t => ({
-      title: (t.title ?? '').trim(),
-      tier: tierName(t.tier ?? ''),
-      after: (t.after ?? []).filter(n => Number.isInteger(n) && n > 0).slice(0, MAX_AFTER),
-    }))
+const cleanTasks = (tasks: unknown): PlannedTask[] | undefined =>
+  Array.isArray(tasks)
+    ? tasks
+        .filter((t): t is Record<string, unknown> => typeof t === 'object' && t !== null && str(t.title).trim() !== '')
+        .slice(0, MAX_TASKS)
+        .map(t => ({
+          title: str(t.title).trim(),
+          tier: tierName(str(t.tier)),
+          after: (Array.isArray(t.after) ? t.after : []).filter((n): n is number => Number.isInteger(n) && n > 0).slice(0, MAX_AFTER),
+        }))
+    : undefined
 
 const merge = (prev: Flow | null, input: ProgressInput): Flow => {
   // A new title means a new flow: never carry counters over from an earlier one.
   const base = isNewFlow(prev, input) || !prev ? blank() : { ...blank(), ...prev }
   const tasks = cleanTasks(input.tasks) ?? base.tasks
-  const total = Math.min(MAX_TASKS, Math.max(0, Math.round(input.total ?? (input.tasks ? tasks.length : base.total))))
-  const done = Math.min(total || Infinity, Math.max(0, Math.round(input.done ?? base.done)))
+  const total = Math.min(MAX_TASKS, Math.max(0, Math.round(num(input.total) ?? (Array.isArray(input.tasks) ? tasks.length : base.total))))
+  const done = Math.min(total || Infinity, Math.max(0, Math.round(num(input.done) ?? base.done)))
   const phase = input.phase && PHASES.includes(input.phase) ? input.phase : base.phase
   return {
     ...base,
-    title: clip(input.title?.trim() || base.title, MAX_TITLE),
+    title: clip(str(input.title).trim() || base.title, MAX_TITLE),
     total,
     done,
     phase: input.finished ? 'close' : phase,
@@ -348,25 +383,49 @@ const fitText = (s: string, size: number, maxW: number): string => {
   return out + '…'
 }
 
+// The grey tones every drawing shares, light and dark: text (t), second lines (s), tertiary text (m),
+// bar tracks (k), hairlines (ln), tertiary strokes (ms) and tiles.
+const TOKENS = `.t{fill:#1f1f1f}.s{fill:#4f4f4c}.m{fill:#6b6b68}.k{fill:#e4e4e2}.ln{stroke:#e4e4e1}.ms{stroke:#6b6b68}.tile{fill:#f4f3f0}
+@media (prefers-color-scheme: dark){.t{fill:#ececec}.s{fill:#bcbcb8}.m{fill:#9a9a96}.k{fill:#2c2c2c}.ln{stroke:#333331}.ms{stroke:#9a9a96}.tile{fill:#262625}}`
+
 // The pixel bar, the band's rows: a dithered fill,
 // sparse at the start and dense toward the head, a faint layer for work handed out,
 // ticks between tasks, and a pill with the count riding the head. Pixels twinkle in
 // four out-of-phase groups; a calm bar (finished) settles to a slow glow.
-const BAR_CSS = (isCalm: boolean): string => `<style>
-.t{fill:#1f1f1f}.m{fill:#6b6b68}.k{fill:#e4e4e2}.tk{fill:#b4b4b0}
-@media (prefers-color-scheme: dark){.t{fill:#ececec}.m{fill:#9a9a9a}.k{fill:#2c2c2c}.tk{fill:#5a5a5a}}
-.t0,.t1,.t2,.t3{animation:tw ${isCalm ? 3.2 : 2.2}s ease-in-out infinite}
-.t1{animation-duration:${isCalm ? 3.8 : 2.8}s;animation-delay:-.7s}.t2{animation-duration:${isCalm ? 4.4 : 1.9}s;animation-delay:-1.3s}.t3{animation-duration:${isCalm ? 3.5 : 3.3}s;animation-delay:-.4s}
-@keyframes tw{0%,100%{opacity:1}50%{opacity:${isCalm ? 0.8 : 0.3}}}
-@media (prefers-reduced-motion: reduce){.t0,.t1,.t2,.t3{animation:none}}
+// A calm bar's pixels take classes and a keyframe of their own (g0..g3, gw): the band nests two
+// rows in one drawing, where one shared name would take the last row's timing for both.
+const BAR_CSS = (isCalm: boolean): string => {
+  const c = isCalm ? 'g' : 't'
+  return `<style>
+${TOKENS}.tk{fill:#b4b4b0}
+@media (prefers-color-scheme: dark){.tk{fill:#5a5a5a}}
+.${c}0,.${c}1,.${c}2,.${c}3{animation:${c}w ${isCalm ? 3.2 : 2.2}s ease-in-out infinite}
+.${c}1{animation-duration:${isCalm ? 3.8 : 2.8}s;animation-delay:-.7s}.${c}2{animation-duration:${isCalm ? 4.4 : 1.9}s;animation-delay:-1.3s}.${c}3{animation-duration:${isCalm ? 3.5 : 3.3}s;animation-delay:-.4s}
+@keyframes ${c}w{0%,100%{opacity:1}50%{opacity:${isCalm ? 0.8 : 0.3}}}
+@media (prefers-reduced-motion: reduce){.${c}0,.${c}1,.${c}2,.${c}3{animation:none}}
 </style>`
+}
 
-type BarOptions = { run?: number; ticks?: number; rtl?: boolean }
+type BarOptions = { run?: number; ticks?: number; rtl?: boolean; calm?: boolean }
+
+// barGroup is pure: the band redraws the same bars every second, so the last few are kept.
+const barMemo = new Map<string, string>()
 
 // One bar, drawn at (0, 0) and BAR_W by barH: place it with a translate. `id` keeps its
 // clip path its own, since several bars share one drawing.
 export const barGroup = (id: string, BAR_W: number, barH: number, fill: number, color: string, pill: string, o: BarOptions = {}): string => {
+  const key = JSON.stringify([id, BAR_W, barH, fill, color, pill, o.run, o.ticks, o.rtl, o.calm])
+  const hit = barMemo.get(key)
+  if (hit !== undefined) return hit
+  if (barMemo.size > 32) barMemo.clear()
+  const out = drawBar(id, BAR_W, barH, fill, color, pill, o)
+  barMemo.set(key, out)
+  return out
+}
+
+const drawBar = (id: string, BAR_W: number, barH: number, fill: number, color: string, pill: string, o: BarOptions): string => {
   const ratioOf = (r: number) => Math.max(0, Math.min(1, r))
+  const cls = o.calm ? 'g' : 't'
   const fillW = Math.round(BAR_W * ratioOf(fill))
   const runW = Math.round(BAR_W * ratioOf(o.run ?? 0))
   const bx = (x: number, w: number): number => (o.rtl ? BAR_W - x - w : x)
@@ -376,13 +435,13 @@ export const barGroup = (id: string, BAR_W: number, barH: number, fill: number, 
   for (let c = 0; c < cols; c++) {
     const density = 0.35 + 0.6 * Math.pow(c / Math.max(1, cols), 1.2)
     for (let r = 0; r < rows; r++) {
-      if (noise(c, r) < density) dots.push(`<rect class="t${Math.floor(noise(r, c) * 4)}" x="${bx(c * CELL + 1, 2)}" y="${r * CELL + 1}" width="2" height="2"/>`)
+      if (noise(c, r) < density) dots.push(`<rect class="${cls}${Math.floor(noise(r, c) * 4)}" x="${bx(c * CELL + 1, 2)}" y="${r * CELL + 1}" width="2" height="2"/>`)
     }
   }
   const faint: string[] = []
   for (let c = cols; c < Math.floor(runW / CELL); c++) {
     for (let r = 0; r < rows; r++) {
-      if (noise(c + 7, r + 3) < 0.2) faint.push(`<rect class="t${Math.floor(noise(r + 5, c) * 4)}" x="${bx(c * CELL + 1, 1.7)}" y="${r * CELL + 1}" width="1.7" height="1.7"/>`)
+      if (noise(c + 7, r + 3) < 0.2) faint.push(`<rect class="${cls}${Math.floor(noise(r + 5, c) * 4)}" x="${bx(c * CELL + 1, 1.7)}" y="${r * CELL + 1}" width="1.7" height="1.7"/>`)
     }
   }
   const ticks: string[] = []
@@ -403,7 +462,7 @@ export const barGroup = (id: string, BAR_W: number, barH: number, fill: number, 
     pill
       ? `
 <rect x="${pillX}" width="${pillW}" height="${barH}" rx="${barH / 2}" fill="${color}"/>
-<text x="${pillX + pillW / 2}" y="${barH / 2 + 4}" text-anchor="middle"${o.rtl ? ' direction="rtl"' : ''} font-family="${FONT}" font-size="11" font-weight="600" fill="#ffffff">${xml(pill)}</text>`
+<text x="${pillX + pillW / 2}" y="${barH / 2 + 4}" text-anchor="middle"${o.rtl ? ' direction="rtl"' : ''} font-family="${FONT}" font-size="11" font-weight="600" fill="${color === LOW ? '#ffffff' : INK}">${xml(pill)}</text>`
       : ''
   }`
 }
@@ -428,9 +487,9 @@ const rowSvg = (f: Flow, W: number, isWorking: boolean): string => {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
 ${BAR_CSS(f.isFinished)}
 <circle cx="${rtl ? W - 5 : 5}" cy="${H / 2}" r="4" fill="${color}"/>
-<text class="t" ${titleAt} y="${H / 2 + 4.5}" font-family="${FONT}" font-size="13" font-weight="500">${xml(title)}</text>
-<g transform="translate(${rx(BAR_X, BAR_W)},${y0})">${barGroup('flow', BAR_W, BAR_H, ratio(f), color, label(f), { run, ticks: f.total, rtl })}</g>
-<text class="m" ${percentAt} font-family="${FONT}" font-size="12.5" font-variant-numeric="tabular-nums">${percent}</text>
+<text class="t" ${titleAt} y="${H / 2 + 4.5}" font-family="${FONT}" font-size="13" font-weight="600">${xml(title)}</text>
+<g transform="translate(${rx(BAR_X, BAR_W)},${y0})">${barGroup('flow', BAR_W, BAR_H, ratio(f), color, label(f), { run, ticks: f.total, rtl, calm: f.isFinished })}</g>
+<text class="m" ${percentAt} font-family="${FONT}" font-size="11" font-variant-numeric="tabular-nums">${percent}</text>
 ${CRAB_CSS}${crab(rx(W - CRAB_W + 1, crabW), 0, 'king', false, isWorking, 0.8, rtl)}
 </svg>`
 }
@@ -439,6 +498,8 @@ ${CRAB_CSS}${crab(rx(W - CRAB_W + 1, crabW), 0, 'king', false, isWorking, 0.8, r
 // (7-day, 5-hour) share the row's width, each a pixel bar of what is left.
 const USAGE_COLOR: Record<string, string> = { seven_day: '#D97757', five_hour: '#E0B34A' }
 const LOW = '#D0453F'
+// A failed run, job or step: the same red as a window running low.
+const FAIL = LOW
 const windowName = (kind: string): string => (kind === 'seven_day' ? '7D' : kind === 'five_hour' ? '5H' : kind.replace(/_/g, ' ').toUpperCase().slice(0, 6))
 export const resetIn = (iso: string | undefined, at: number): string => {
   const ms = iso ? Date.parse(iso) - at : NaN
@@ -450,6 +511,9 @@ export const resetIn = (iso: string | undefined, at: number): string => {
   return h < 24 ? `${h}h ${mins % 60}m` : `${Math.floor(h / 24)}d ${h % 24}h`
 }
 export const usageSvg = (ws: readonly UsageWindow[], W: number, at: number): string => {
+  // Mirrored in Hebrew as the FLOW row is: each box across the row (`rx`), each bar inside itself.
+  const rtl = isRtl()
+  const rx = (x: number, w: number): number => (rtl ? W - x - w : x)
   const right = W - CRAB_W - 6
   const GAP = 18
   const seg = (right - 16 - GAP * (ws.length - 1)) / Math.max(1, ws.length)
@@ -459,16 +523,16 @@ export const usageSvg = (ws: readonly UsageWindow[], W: number, at: number): str
     const x = 16 + i * (seg + GAP)
     const name = windowName(w.kind)
     const reset = resetIn(w.resetsAt, at)
-    const nameW = Math.round(textWidth(name, 12) + 8)
+    const nameW = Math.round(textWidth(name, 11) + 8)
     const resetW = reset ? Math.round(textWidth(reset, 11) + 8) : 0
     const barW = Math.max(40, seg - nameW - resetW)
-    return `<text class="m" x="${x}" y="${H / 2 + 4.5}" font-family="${FONT}" font-size="12" font-weight="600">${name}</text>
-<g transform="translate(${x + nameW},${(H - BAR_H) / 2})">${barGroup(`u-${w.kind}`, barW, BAR_H, left / 100, color, `${left}%`)}</g>
-${reset ? `<text class="m" x="${x + seg}" y="${H / 2 + 4.5}" text-anchor="end" font-family="${FONT}" font-size="11" font-variant-numeric="tabular-nums">${reset}</text>` : ''}`
+    return `<text class="s" ${rtl ? `x="${W - x}" text-anchor="end"` : `x="${x}"`} y="${H / 2 + 4.5}" font-family="${FONT}" font-size="11" font-weight="600" letter-spacing=".4">${name}</text>
+<g transform="translate(${rx(x + nameW, barW)},${(H - BAR_H) / 2})">${barGroup(`u-${w.kind}`, barW, BAR_H, left / 100, color, `${left}%`, { rtl })}</g>
+${reset ? `<text class="m" ${rtl ? `x="${W - x - seg}"` : `x="${x + seg}" text-anchor="end"`} y="${H / 2 + 4.5}" font-family="${FONT}" font-size="11" font-variant-numeric="tabular-nums">${reset}</text>` : ''}`
   })
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
 ${BAR_CSS(false)}
-<circle cx="5" cy="${H / 2}" r="4" fill="#8a8a8a" class="m"/>
+<circle cx="${rtl ? W - 5 : 5}" cy="${H / 2}" r="4" class="m"/>
 ${body.join('')}
 </svg>`
 }
@@ -479,8 +543,7 @@ ${body.join('')}
 // this band stands in for them, so their rows are dropped.
 const BAND_PAD = 8
 const BAND_GAP = 6
-const BAND_CSS = `<style>.tile{fill:#f4f3f0}.ln{stroke:#e4e4e1}
-@media (prefers-color-scheme: dark){.tile{fill:#262625}.ln{stroke:#333331}}</style>`
+const BAND_CSS = `<style>${TOKENS}</style>`
 export const bandHeight = (rows: number): number => BAND_PAD * 2 + rows * H + (rows - 1) * BAND_GAP
 export const bandSvg = (W: number, rows: readonly string[]): string => {
   const BH = bandHeight(rows.length)
@@ -585,12 +648,12 @@ const addQuad = (a: Quad, b: Quad): Quad => [a[0] + b[0], a[1] + b[1], a[2] + b[
 
 const costOf = (model: string, u: Usage, isRequest: boolean): number => costParts(model, u, isRequest).reduce((a, b) => a + b, 0)
 
-// One more model request added to a split.
-export const addRequest = (s: Split, model: string, u: Usage): Split => ({
+// One more model request added to a split; a turn's sum (`isRequest` false) at the model's ordinary prices.
+export const addRequest = (s: Split, model: string, u: Usage, isRequest = true): Split => ({
   model,
   requests: s.requests + 1,
   tokens: addQuad(s.tokens, quadOf(u)),
-  usd: addQuad(s.usd, costParts(model, u, true)),
+  usd: addQuad(s.usd, costParts(model, u, isRequest)),
 })
 
 const sum = (q: readonly number[]): number => q.reduce((a, b) => a + b, 0)
@@ -639,10 +702,11 @@ const plannedOf = (f: Flow | null, list: AgentRun[]): Planned[] => {
 
 // The whole session: the main session's own figures (what the engine reports as its cost and
 // start, the tokens summed here) plus the subagents. With no session figures, the subagents alone.
+// Subagent tokens and cost come from `sub`, every request summed, so they hold when the list is reset or trimmed.
 export type SessionFigures = { costUsd?: number; startedAt?: number; tokens?: number }
-export const totals = (list: AgentRun[], at: number, session: SessionFigures = {}) => {
-  const subCost = list.reduce((s, a) => s + a.costUsd, 0)
-  const tokens = list.reduce((s, a) => s + a.tokens, 0) + (session.tokens ?? 0)
+export const totals = (list: AgentRun[], at: number, session: SessionFigures = {}, sub: Split = NO_SPLIT) => {
+  const subCost = sum(sub.usd)
+  const tokens = sum(sub.tokens) + (session.tokens ?? 0)
   const start = Math.min(...list.map(a => a.startedAt), session.startedAt || Infinity)
   // The session runs until now; subagents alone stop the clock when the last one ends.
   const end = Math.max(session.startedAt ? at : -Infinity, ...list.map(a => a.endedAt ?? Math.max(at, a.startedAt)))
@@ -655,8 +719,6 @@ export const totals = (list: AgentRun[], at: number, session: SessionFigures = {
 // The pane's backdrop: a dotted grid as tall as the content laid over it; the
 // row SVGs are transparent, so it shows through between their marks.
 const GRID_STEP = 16
-// A Text or Button row on the desktop is about 20px; the grid errs taller.
-const LINE_H = 24
 // The engine refuses an Svg taller than 4096px, so a long grid is stacked from
 // tiles of at most this height; a multiple of GRID_STEP keeps the dots aligned.
 const GRID_TILE = 4096
@@ -667,12 +729,11 @@ const gridSvg = (W: number, H: number) => `<svg xmlns="http://www.w3.org/2000/sv
 <rect width="${W}" height="${H}" fill="url(#g)"/>
 </svg>`
 
-// The border of the panel's section cards.
-const EDGE = '#3d3d3a'
+// The border of the panel's section cards and tooltips: a theme key, so it reads in light and dark.
+const EDGE = 'subtle'
 
 const PANE_CSS = `<style>
-.t{fill:#1f1f1f}.s{fill:#4f4f4c}.m{fill:#6b6b68}.k{fill:#ecebe8}.ln{stroke:#e4e4e1}.tile{fill:#f4f3f0}
-@media (prefers-color-scheme: dark){.t{fill:#ececec}.s{fill:#bcbcb8}.m{fill:#9a9a96}.k{fill:#2c2c2b}.ln{stroke:#333331}.tile{fill:#262625}}
+${TOKENS}
 .live{animation:p 1.6s ease-in-out infinite}@keyframes p{50%{opacity:.3}}
 @media (prefers-reduced-motion: reduce){.live{animation:none}}
 </style>`
@@ -880,9 +941,9 @@ export const crab = (x: number, y: number, costume: string, dim = false, isWalki
 
 const statusMark = (x: number, y: number, status: string, color: string): string => {
   if (status === 'running') return `<circle class="live" cx="${x}" cy="${y}" r="3.5" fill="${color}"/>`
-  if (status === 'done') return `<path d="M${x - 5} ${y}l3.5 3.5 6.5-7" fill="none" stroke="#3B9C5F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>`
-  if (status === 'failed') return `<path d="M${x - 4} ${y - 4}l8 8M${x + 4} ${y - 4}l-8 8" stroke="#D0453F" stroke-width="1.8" stroke-linecap="round"/>`
-  return `<circle cx="${x}" cy="${y}" r="5" fill="none" stroke="#9a9a96" stroke-width="1.4"/><path d="M${x} ${y - 2.5}v2.8l1.8 1.2" fill="none" stroke="#9a9a96" stroke-width="1.4" stroke-linecap="round"/>`
+  if (status === 'done') return `<path d="M${x - 5} ${y}l3.5 3.5 6.5-7" fill="none" stroke="${DONE}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>`
+  if (status === 'failed') return `<path d="M${x - 4} ${y - 4}l8 8M${x + 4} ${y - 4}l-8 8" stroke="${FAIL}" stroke-width="1.8" stroke-linecap="round"/>`
+  return `<circle class="ms" cx="${x}" cy="${y}" r="5" fill="none" stroke-width="1.4"/><path class="ms" d="M${x} ${y - 2.5}v2.8l1.8 1.2" fill="none" stroke-width="1.4" stroke-linecap="round"/>`
 }
 
 // Panel rows are laid out left to right; in Hebrew each box mirrors across the
@@ -990,13 +1051,13 @@ const headerSvg = (W: number, title: string, t: ReturnType<typeof totals>): stri
   const top = tileTop(title)
   const isZero = (v: string) => /^≈?\$?0(\.00)?$|^0:00$/.test(v)
   const tile = (i: number, k: string, v: string) =>
-    `<g><rect class="tile ln" x="${mx(W, i * (tw + gap), tw)}" y="${top + 0.5}" width="${tw}" height="46" rx="10" stroke-width="1"/>
-<text class="s" ${startText(W, i * (tw + gap) + 12, top + 17)} font-family="${FONT}" font-size="11" letter-spacing=".4">${k.toUpperCase()}</text>
+    `<g><rect class="tile ln" x="${mx(W, i * (tw + gap), tw)}" y="${top + 0.5}" width="${tw}" height="${TILE_H}" rx="10" stroke-width="1"/>
+<text class="s" ${startText(W, i * (tw + gap) + 12, top + 17)} font-family="${FONT}" font-size="11" font-weight="600" letter-spacing=".4">${k.toUpperCase()}</text>
 <text class="${isZero(v) ? 'm' : 't'}" ${startText(W, i * (tw + gap) + 12, top + 38, false)} font-family="${FONT}" font-size="18" font-weight="600" font-variant-numeric="tabular-nums">${isZero(v) ? '—' : v}</text></g>`
   return svg(
     W,
     headerHeight(title),
-    `${title ? `<text class="t" ${startText(W, 0, 15)} font-family="${FONT}" font-size="14" font-weight="600">${xml(fitText(title, 14, W))}</text>` : ''}
+    `${title ? `<text class="t" ${startText(W, 0, 15)} font-family="${FONT}" font-size="13" font-weight="600">${xml(fitText(title, 13, W))}</text>` : ''}
 ${tile(0, s.cost, '≈' + fmtCost(t.cost))}${tile(1, s.tokens, fmtTokens(t.tokens))}${tile(2, s.time, fmtTime(t.time))}`,
   )
 }
@@ -1038,19 +1099,20 @@ const TOGGLE_W = 56
 const workRowSvg = (W: number, r: RowSpec, hasToggle = false): string => {
   const textW = W - 42 - 22 - (hasToggle ? TOGGLE_W : 0)
   const barW = W - 42
-  const statsW = r.stats ? textWidth(r.stats, 11) + 12 : 0
-  const left = fitText(`${r.tag}${r.meta ? `  ·  ${r.meta}` : ''}`, 11, Math.max(40, barW - statsW))
-  const tagLen = Math.min(r.tag.length, left.length)
+  // The numbers take at most 60% of the line, so the tag and meta keep at least 40%.
+  const stats = r.stats ? fitText(r.stats, 11, barW * 0.6 - 12) : ''
+  const statsW = stats ? textWidth(stats, 11) + 12 : 0
+  const left = fitText(`${r.tag}${r.meta ? ` · ${r.meta}` : ''}`, 11, Math.max(40, barW - statsW))
   const fillW = Math.round(barW * Math.max(0, Math.min(1, r.fill ?? r.grey ?? 0)))
   return svg(
     W,
     ROW_H,
     `${r.crab}
 <text class="${r.dim ? 's' : 't'}" ${startText(W, 42, 17)} font-family="${FONT}" font-size="13" font-weight="600">${xml(fitText(r.title, 13, textW))}</text>
-<text ${startText(W, 42, 34)} font-family="${FONT}" font-size="11"><tspan fill="${r.color}">${xml(left.slice(0, tagLen))}</tspan><tspan class="s">${xml(left.slice(tagLen))}</tspan></text>
-${r.stats ? `<text class="s" ${endText(W, W, 34)} font-family="${FONT}" font-size="11" font-variant-numeric="tabular-nums">${xml(r.stats)}</text>` : ''}
+<text class="s" ${startText(W, 42, 34)} font-family="${FONT}" font-size="11">${xml(left)}</text>
+${stats ? `<text class="s" ${endText(W, W, 34)} font-family="${FONT}" font-size="11" font-variant-numeric="tabular-nums">${xml(stats)}</text>` : ''}
 <rect class="k" x="${mx(W, 42, barW)}" y="44" width="${barW}" height="4" rx="2"/>${fillW > 0 ? `<rect${r.fill === null ? ' class="m"' : ''} x="${mx(W, 42, fillW)}" y="44" width="${fillW}" height="4" rx="2"${r.fill === null ? '' : ` fill="${r.color}"`}/>` : ''}
-${statusMark(mx(W, W - 8), 13, r.status, r.color)}
+${statusMark(mx(W, W - 10), 14, r.status, r.color)}
 <line class="ln" x1="0" y1="${ROW_H - 0.5}" x2="${W}" y2="${ROW_H - 0.5}"/>`,
   )
 }
@@ -1069,8 +1131,8 @@ const agentSvg = (W: number, a: AgentRun, at: number, hasToggle = false): string
     title: a.description || a.type,
     tag: tier === 'other' ? a.type : tierWord(tier),
     color: colorOf(tier),
-    meta: meta.join('  ·  '),
-    stats: `${s.ctx} ${ctx}% · ${fmtTokens(a.contextTokens)}  ≈${fmtCost(a.costUsd)}  ${fmtTime(elapsed(a, at))}`,
+    meta: meta.join(' · '),
+    stats: [`${s.ctx} ${ctx}%`, fmtTokens(a.contextTokens), `≈${fmtCost(a.costUsd)}`, fmtTime(elapsed(a, at))].join(' · '),
     fill: progressOf(a),
     grey: ctx / 100,
     status: a.status,
@@ -1086,7 +1148,7 @@ const plannedSvg = (W: number, p: Planned): string => {
     title: `${p.n}. ${p.title}`,
     tag: tierWord(tier),
     color: colorOf(tier),
-    meta: meta.filter(Boolean).join('  ·  '),
+    meta: meta.filter(Boolean).join(' · '),
     stats: '',
     fill: 0,
     status: 'planned',
@@ -1117,33 +1179,12 @@ const taskSvg = (W: number, t: Task, n: number, total: number, hasToggle = false
     title: t.content,
     tag: 'task',
     color: TASK_TINT,
-    meta: `${n} of ${total}`,
+    meta: `${n}/${total}`,
     stats: '',
     fill: t.status === 'completed' ? 1 : 0,
     status: t.status === 'completed' ? 'done' : t.status === 'in_progress' ? 'running' : 'planned',
     dim: t.status === 'pending',
   }, hasToggle)
-
-const compactSvg = (W: number, list: AgentRun[], planned: Planned[], t: ReturnType<typeof totals>): string => {
-  const icons = [
-    ...list.filter(a => a.status === 'running').map(a => ({ k: costumeOf(a), c: colorOf(costumeOf(a)), s: 'running', dim: false, tint: modelTint(a.model) })),
-    ...list.filter(a => a.status !== 'running').map(a => ({ k: costumeOf(a), c: colorOf(costumeOf(a)), s: a.status, dim: false, tint: modelTint(a.model) })),
-    ...planned.map(p => ({ k: p.tier in TIER_COLOR ? p.tier : 'other', c: colorOf(p.tier), s: 'planned', dim: true, tint: modelTint(TIER_MODEL[p.tier]?.[0] ?? '') })),
-  ]
-  const fit = Math.max(1, Math.floor((W - 150) / 36))
-  const shown = icons.slice(0, fit)
-  const more = icons.length - shown.length
-  const body = shown
-    .map((ic, i) => rowCrab(W, i * 36, 0, ic.k, ic.dim, ic.s === 'running', ic.tint) + (ic.s === 'running' ? `<circle class="live" cx="${mx(W, i * 36 + 32)}" cy="4" r="3" fill="${ic.c}"/>` : ''))
-    .join('')
-  const x = shown.length * 36 + (more ? 4 : 0)
-  return svg(
-    W,
-    32,
-    `${body}${more ? `<text class="s" ${startText(W, x, 21, false)} font-family="${FONT}" font-size="12">+${more}</text>` : ''}
-<text class="s" ${endText(W, W, 21)} font-family="${FONT}" font-size="12" font-variant-numeric="tabular-nums">≈${fmtCost(t.cost)} · ${fmtTokens(t.tokens)} · ${fmtTime(t.time)}</text>`,
-  )
-}
 
 // --- Live work: how long the main session counts as working after its last action, and the glyph per kind of work.
 const LIVE = '#E0B34A'
@@ -1151,7 +1192,7 @@ const LIVE_MS = 90_000
 const KIND: Record<WorkKind, [glyph: string, color: string, word: string]> = {
   read: ['◇', '#6AAABD', 'read'],
   edit: ['✎', '#D97757', 'edit'],
-  cli: ['❯', '#5FBF8F', 'command'],
+  cli: ['❯', '#C76BA8', 'command'],
   search: ['⌕', '#C9A227', 'search'],
   web: ['◎', '#8F8CF4', 'web'],
 }
@@ -1172,9 +1213,8 @@ const SKILL_MAX = 14
 // Tools of the app itself and of this plugin are not skills the person added.
 const SKIP_SERVERS = /^(ccd_|hideout$|claude_ai_)/
 
-// What a tool call says about a skill or plugin in use, or null for any other call.
-export const kitOf = (tool: string, e: Record<string, unknown>): [kind: SkillKind, name: string] | null => {
-  if (tool === 'Skill' && typeof e.skill === 'string' && e.skill) return ['skill', e.skill.replace(/^\//, '')]
+// What a tool call says about a plugin in use, or null for any other call. Skills are counted at skill.prompt.
+export const kitOf = (tool: string): [kind: SkillKind, name: string] | null => {
   const m = /^mcp__(.+?)__/.exec(tool)
   if (!m?.[1] || SKIP_SERVERS.test(m[1])) return null
   // A plugin's own server is named plugin_<plugin>_<server>.
@@ -1220,38 +1260,36 @@ export const kitLabel = (name: string): string => {
 const whoName = (who: string, list: readonly AgentRun[]): string =>
   who === 'main' ? 'main' : (list.find(a => a.agentId === who)?.type ?? 'subagent')
 
-const kitRowSvg = (W: number, r: KitRow, list: readonly AgentRun[], at: number): string => {
+// A skill or plugin in use now (the others sit in the chip grid): its crab walks and its dot is lit.
+const kitRowSvg = (W: number, r: KitRow, list: readonly AgentRun[]): string => {
   const tint = skillTint(r.name)
-  const isActive = r.state === 'active'
-  const sub =
-    r.state === 'idle'
-      ? 'enabled · not used yet'
-      : `${isActive ? 'now' : `${fmtTime(at - (r.use?.at ?? at))} ago`} · ${whoName(r.use?.who ?? 'main', list)} · ${r.use?.count ?? 0}×`
+  const kindW = textWidth(r.kind, 11)
+  const sub = `now · ${whoName(r.use?.who ?? 'main', list)} · ${r.use?.count ?? 0}×`
   return svg(
     W,
     SKILL_ROW_H,
-    `${crab(mx(W, 4, crabWidth(SKILL_SCALE)), 8, 'other', !isActive, isActive, SKILL_SCALE, isRtl(), tint)}
-<text class="${r.state === 'idle' ? 's' : 't'}" ${startText(W, 36, 17)} font-family="${FONT}" font-size="12"${isActive ? ' font-weight="600"' : ''}>${xml(fitText(kitLabel(r.name), 12, W - 80))}</text>
-<text class="m" ${startText(W, 36, 31)} font-family="${FONT}" font-size="11">${xml(fitText(sub, 11, W - 90))}</text>
-<text class="m" ${endText(W, W - (isActive ? 22 : 8), 17)} font-family="${FONT}" font-size="11">${r.kind}</text>
-${isActive ? `<circle class="live" cx="${mx(W, W - 10)}" cy="14" r="3.5" fill="${tint}"/>` : ''}`,
+    `${crab(mx(W, 4, crabWidth(SKILL_SCALE)), 8, 'other', false, true, SKILL_SCALE, isRtl(), tint)}
+<text class="t" ${startText(W, 36, 17)} font-family="${FONT}" font-size="13" font-weight="600">${xml(fitText(kitLabel(r.name), 13, W - 36 - kindW - 30))}</text>
+<text class="s" ${startText(W, 36, 31)} font-family="${FONT}" font-size="11">${xml(fitText(sub, 11, W - 90))}</text>
+<text class="m" ${endText(W, W - 22, 17)} font-family="${FONT}" font-size="11">${r.kind}</text>
+<circle class="live" cx="${mx(W, W - 10)}" cy="14" r="3.5" fill="${tint}"/>`,
   )
 }
 
-// Enabled plugins not used yet: a grid of small chips, two to a row.
+// Skills and plugins not active: small chips, two to a row, each row one drawing so the card scrolls through them.
+// `top` is the gap above the first row.
 const CHIP_H = 24
 const CHIP_TOP = 8
-export const kitIdleHeight = (n: number): number => (n ? CHIP_TOP + Math.ceil(n / 2) * CHIP_H + 4 : 0)
-const kitIdleSvg = (W: number, rows: readonly KitRow[]): string => {
+const kitIdleSvg = (W: number, pair: readonly KitRow[], top: number): string => {
   const cw = (W - 6) / 2
   return svg(
     W,
-    kitIdleHeight(rows.length),
-    rows
+    top + CHIP_H,
+    pair
       .map((r, i) => {
-        const x = (i % 2) * (cw + 6)
-        const y = CHIP_TOP + Math.floor(i / 2) * CHIP_H + 2
-        const w = i === rows.length - 1 && rows.length % 2 ? W : cw
+        const x = i * (cw + 6)
+        const y = top + 2
+        const w = cw
         return `<rect class="tile ln" x="${mx(W, x, w)}" y="${y + 0.5}" width="${w}" height="${CHIP_H - 4}" rx="10" stroke-width="1"/>
 ${crab(mx(W, x + 5, crabWidth(0.45)), y + 3, 'other', true, false, 0.45, isRtl(), skillTint(r.name))}
 <text class="s" ${startText(W, x + 24, y + 14)} font-family="${FONT}" font-size="11">${xml(fitText(kitLabel(r.name), 11, w - 30))}</text>`
@@ -1264,17 +1302,22 @@ ${crab(mx(W, x + 5, crabWidth(0.45)), y + 3, 'other', true, false, 0.45, isRtl()
 // step) and the last thing it did.
 const MAIN_ROW_H = 62
 // The main session's row, always shown: the Tactician in its model's shell, with the model named.
-const mainRowSvg = (W: number, step: string, item: WorkItem | undefined, isWorking: boolean, model?: string): string =>
-  svg(
+const mainRowSvg = (W: number, step: string, item: WorkItem | undefined, isWorking: boolean, model?: string): string => {
+  const s = tr()
+  // The head is cut to fit as one line: the name in bold, the model after it.
+  const head = fitText(`${s.mainSession}${model ? ` · ${modelName(model)}` : ''}`, 13, W - 70)
+  const cut = Math.min(s.mainSession.length, head.length)
+  return svg(
     W,
     MAIN_ROW_H,
     `<rect class="tile ln" x="0.5" y="0.5" width="${W - 1}" height="${MAIN_ROW_H - 10}" rx="10" stroke-width="1"/>
 ${rowCrab(W, 6, 10, 'king', false, isWorking, model ? modelTint(model) : undefined)}
-<text ${startText(W, 46, 18)} font-family="${FONT}" font-size="13"><tspan class="t" font-weight="600">Main session</tspan>${model ? `<tspan class="s">  ·  ${xml(modelName(model))}</tspan>` : ''}</text>
-<text class="s" ${startText(W, 46, 33)} font-family="${FONT}" font-size="11">${xml(fitText(step || 'no task list yet', 11, W - 70))}</text>
+<text ${startText(W, 46, 18)} font-family="${FONT}" font-size="13"><tspan class="t" font-weight="600">${xml(head.slice(0, cut))}</tspan><tspan class="s">${xml(head.slice(cut))}</tspan></text>
+<text class="s" ${startText(W, 46, 33)} font-family="${FONT}" font-size="11">${xml(fitText(step || s.noTasks, 11, W - 70))}</text>
 ${item ? `<text ${startText(W, 46, 46)} font-family="${FONT}" font-size="11"><tspan fill="${KIND[item.kind][1]}">${KIND[item.kind][0]}</tspan><tspan class="m"> ${xml(fitText(item.label, 11, W - 80))}</tspan></text>` : ''}
-${isWorking ? `<circle class="live" cx="${mx(W, W - 12)}" cy="14" r="3.5" fill="${LIVE}"/>` : ''}`,
+${isWorking ? `<circle class="live" cx="${mx(W, W - 10)}" cy="14" r="3.5" fill="${LIVE}"/>` : ''}`,
   )
+}
 
 // Enabled plugins from settings: { "name@marketplace": true }.
 const enabledPlugins = async ($: EngineInterface): Promise<string[]> => {
@@ -1313,23 +1356,22 @@ async function togglePane($: EngineInterface): Promise<boolean> {
 
 // What a subagent's tool call worked on, as one line of the panel.
 export const workOf = (tool: string, e: Record<string, unknown>): [WorkKind, string] | null => {
-  const str = (k: string): string => (typeof e[k] === 'string' ? (e[k] as string) : '')
   const tail = (path: string): string => path.replace(/\\/g, '/').split('/').filter(Boolean).slice(-2).join('/')
   switch (tool) {
     case 'Read':
-      return ['read', tail(str('file_path'))]
+      return ['read', tail(str(e.file_path))]
     case 'Edit':
     case 'Write':
-      return ['edit', tail(str('file_path'))]
+      return ['edit', tail(str(e.file_path))]
     case 'Bash':
-      return ['cli', str('description') || str('command')]
+      return ['cli', str(e.description) || str(e.command)]
     case 'Grep':
     case 'Glob':
-      return ['search', str('pattern')]
+      return ['search', str(e.pattern)]
     case 'WebFetch':
-      return ['web', /^\w+:\/\/([^/]+)/.exec(str('url'))?.[1] ?? str('url')]
+      return ['web', /^\w+:\/\/([^/]+)/.exec(str(e.url))?.[1] ?? str(e.url)]
     case 'WebSearch':
-      return ['web', str('query')]
+      return ['web', str(e.query)]
   }
   return null
 }
@@ -1474,13 +1516,14 @@ export const register: Register = (on, options) => {
     // so it goes dark on time; quiet otherwise.
     $.clock.every(1000, () => {
       void (async () => {
-        const at = await $.clock.now()
-        if ((await read($, bg)).some(t => isOverdue(t, at)))
-          await update($, bg, list => list.map((t): BgTask => (isOverdue(t, at) ? { ...t, status: 'done', endedAt: t.endsBy ?? at } : t)))
-        const isRunning = (await read($, agents)).some(a => a.status === 'running') || (await read($, bg)).some(t => t.status === 'running')
-        const lastWork = (await read($, work)).at(-1)?.at ?? 0
-        const shown = await read($, now)
-        const isLit = (lastWork > shown - LIVE_MS && at - lastWork < LIVE_MS + 2000)
+        const [at, bgNow, agentList, workList, idleAt] = await Promise.all([$.clock.now(), read($, bg), read($, agents), read($, work), read($, mainIdleAt)])
+        const bgList = bgNow.some(t => isOverdue(t, at))
+          ? await update($, bg, list => list.map((t): BgTask => (isOverdue(t, at) ? { ...t, status: 'done', endedAt: t.endsBy ?? at } : t)))
+          : bgNow
+        const isRunning = agentList.some(a => a.status === 'running') || bgList.some(t => t.status === 'running')
+        // The main row is lit by its last call after its last turn ended, until LIVE_MS (and a tick to spare) has passed.
+        const lastMain = [...workList].reverse().find(w => w.who === 'main')?.at ?? 0
+        const isLit = lastMain > idleAt && at - lastMain < LIVE_MS + 2000
         if (!isRunning && !isLit) return
         await update($, now, () => at)
       })()
@@ -1545,7 +1588,7 @@ export const register: Register = (on, options) => {
     return next(e)
   }).catch(($, e, next) => next(e))
   on('tool.call', async ($, e, next) => {
-    const k = kitOf(e.tool, e as Record<string, unknown>)
+    const k = kitOf(e.tool)
     if (k) {
       const at = await $.clock.now()
       await update($, kit, list => useKit(list, k[0], k[1], e.agentId ?? 'main', at))
@@ -1555,7 +1598,9 @@ export const register: Register = (on, options) => {
   // Modes a plugin's hook turns on (caveman, ponytail, ...) never call a tool: their added context is the use.
   on('classic.SessionStart', async ($, e, next) => {
     const r = await next(e)
-    const found = pluginsIn(r.additionalContext ?? [], await enabledPlugins($))
+    const names = await enabledPlugins($)
+    await update($, enabled, () => names)
+    const found = pluginsIn(r.additionalContext ?? [], names)
     await update($, modes, prev => [...new Set([...(e.source === 'compact' || e.source === 'resume' ? prev : []), ...found])])
     if (found.length) {
       const at = await $.clock.now()
@@ -1565,7 +1610,9 @@ export const register: Register = (on, options) => {
   }).catch(($, e, next) => next(e))
   on('classic.UserPromptSubmit', async ($, e, next) => {
     const r = await next(e)
-    const found = [...new Set([...pluginsIn(r.additionalContext ?? [], await enabledPlugins($)), ...(await read($, modes))])]
+    const names = await enabledPlugins($)
+    await update($, enabled, () => names)
+    const found = [...new Set([...pluginsIn(r.additionalContext ?? [], names), ...(await read($, modes))])]
     if (found.length) {
       const at = await $.clock.now()
       await update($, kit, list => found.reduce((l, n) => useKit(l, 'plugin', n, 'main', at), list))
@@ -1618,12 +1665,12 @@ export const register: Register = (on, options) => {
     if (e.agentId) return { result: 'ignored: only the main session reports the flow' }
     const input = e as unknown as ProgressInput
     const prev = await read($, flow)
-    if (isNewFlow(prev, input) && input.title !== undefined) {
+    if (isNewFlow(prev, input) && typeof input.title === 'string') {
       // A new flow starts with a clean list; agents still running stay.
       await update($, agents, list => list.filter(a => a.status === 'running'))
     }
     const next = await update($, flow, p => merge(p, input))
-    if (next && input.tasks?.length) await autoOpen($, next.title)
+    if (next && Array.isArray(input.tasks) && input.tasks.length) await autoOpen($, next.title)
     return { result: `ok: ${label(next ?? blank())}` }
   })
 
@@ -1637,41 +1684,40 @@ export const register: Register = (on, options) => {
       list.map(a => {
         if (a.agentId !== agentId) return a
         matched = true
-        const total = Math.max(0, Math.round(input.total ?? a.stepTotal ?? 0))
-        const done = Math.max(0, Math.round(input.done ?? a.stepDone ?? 0))
-        return { ...a, stepTotal: total, stepDone: total ? Math.min(total, done) : done, stepNote: input.note?.trim() || undefined }
+        const total = Math.max(0, Math.round(num(input.total) ?? a.stepTotal ?? 0))
+        const done = Math.max(0, Math.round(num(input.done) ?? a.stepDone ?? 0))
+        return { ...a, stepTotal: total, stepDone: total ? Math.min(total, done) : done, stepNote: str(input.note).trim() || undefined }
       }),
     )
     return { result: matched ? 'ok' : `ignored: no panel row for agent ${agentId}` }
   })
 
-  // Safety net: worker launches move the faint layer even if the orchestrator forgets to report.
+  // Safety net: a worker launch moves the flow to delegate even if the orchestrator forgets to report.
+  // The band's running count is not kept here: it is read from the agents list.
   on('tool.call', { tool: 'Agent' }, async ($, e, next) => {
     const type = String(e.subagent_type ?? '')
     if (!type.startsWith('savvy-')) return next(e)
 
     await update($, flow, prev => {
       const base = prev && !prev.isFinished ? { ...blank(), ...prev } : blank()
-      return { ...base, running: base.running + 1, phase: base.phase === 'plan' ? 'delegate' : base.phase }
+      return { ...base, phase: base.phase === 'plan' ? 'delegate' : base.phase }
     })
-    try {
-      return await next(e)
-    } finally {
-      await update($, flow, prev => (prev ? { ...prev, running: Math.max(0, prev.running - 1) } : prev))
-    }
+    return next(e)
   })
 
   on('agent.spawn', async ($, e, next) => {
     const isUnbriefed = e.subagentType.startsWith('savvy-') && !e.prompt.includes(STEP_TOOL)
     const started = await next(routeModel(isUnbriefed ? { ...e, prompt: e.prompt + STEP_BRIEF } : e))
-    if (started.deny !== undefined) return started
+    // Denied, or no agentId to match its steps and end by: no row.
+    const agentId = started.agentId
+    if (started.deny !== undefined || !agentId) return started
 
     const at = await $.clock.now()
     await update($, agents, list => {
       const round = 1 + list.filter(a => norm(a.description) === norm(e.description) && e.description).length
       const run: AgentRun = {
-        id: started.agentId ?? e.tool_use_id,
-        agentId: started.agentId,
+        id: agentId,
+        agentId,
         type: e.subagentType,
         description: e.description,
         model: started.model,
@@ -1707,6 +1753,7 @@ export const register: Register = (on, options) => {
       await update($, mainSplit, s => addRequest(s, model, usage))
       return result
     }
+    await update($, subSplit, s => addRequest(s, model, usage))
 
     await update($, agents, list =>
       list.map((a): AgentRun =>
@@ -1747,11 +1794,14 @@ export const register: Register = (on, options) => {
     }
     if (agentId) {
       const at = await $.clock.now()
+      // The model of a run priced from the turn's own sum, which the session's subagent split takes too.
+      let summed = undefined as string | undefined
       await update($, agents, list =>
         list.map((a): AgentRun => {
           if (a.agentId !== agentId) return a
           // A run whose steps went unseen still gets the turn's own sum.
           const fallback = a.steps === 0 && e.usage
+          if (fallback && e.usage) summed = e.usage.model || a.model
           return {
             ...a,
             status: e.reason === 'answer' ? 'done' : 'failed',
@@ -1770,6 +1820,9 @@ export const register: Register = (on, options) => {
           }
         }),
       )
+      const usage = e.usage
+      const model = summed
+      if (model && usage) await update($, subSplit, s => addRequest(s, model, usage, false))
       await update($, now, () => at)
     }
     return next(e)
@@ -1779,7 +1832,8 @@ export const register: Register = (on, options) => {
   on('ui.scroll', { requestId: PANE }, async ($, e, next) => {
     if (!paneParked) return next(e)
     // The window's top row is paneRow; the cards start one row down, under the slack row.
-    const r = e.pointer && e.origin.kind === 'person' ? cardAt(cardRects, e.pointer.column, e.pointer.row + paneRow - 1) : undefined
+    // The scroll keys carry no pointer: they scroll the first card that can.
+    const r = e.origin.kind !== 'person' ? undefined : e.pointer ? cardAt(cardRects, e.pointer.column, e.pointer.row + paneRow - 1) : cardRects.find(c => c.max > 0)
     if (r && r.max > 0) await scrollCard($, r.key, Math.sign(e.by) * Math.max(1, Math.abs(e.by)) * r.step, r.max)
     // Park the window on row 1, so the next tick, up or down, has a row to scroll and reaches this hook.
     const res = await next({ ...e, offset: 1 })
@@ -1791,84 +1845,45 @@ export const register: Register = (on, options) => {
     const s = tr()
     const ui = $.ui.resolve(e)
     const { Box, Text, Button } = ui
-    const list = await read($, agents)
-    const bgList = (await read($, bg)).slice().reverse()
-    const bgRows = bgList.map(t => (
-      <Text key={`bg-${t.id}`} wrap="truncate-end">
-        <Text color={tintOf(t.id)}>▪</Text>{' '}
-        <Text color={t.status === 'failed' ? 'red' : t.status === 'done' ? 'green' : undefined}>{STATUS_GLYPH[t.status]}</Text> {t.kind} · {t.label}
-      </Text>
-    ))
-    const nowAt = await read($, now)
-    const workList = await read($, work)
-    const idleAt = await read($, mainIdleAt)
-    const taskList = await read($, tasks)
+    // Every read at once, the clock among them, read once.
+    const [list, bgStored, nowAt, workList, idleAt, taskList, kitList, enabledList, f, p, usage, split, subs] = await Promise.all([
+      read($, agents),
+      read($, bg),
+      read($, now),
+      read($, work),
+      read($, mainIdleAt),
+      read($, tasks),
+      read($, kit),
+      read($, enabled),
+      read($, flow),
+      read($, panel),
+      $.session.usage().catch(() => null),
+      read($, mainSplit),
+      read($, subSplit),
+    ])
+    const bgList = bgStored.slice().reverse()
     const mainItem = [...workList].reverse().find(w => w.who === 'main')
     const doneCount = taskList.filter(t => t.status === 'completed').length
     const mainStep =
       taskList.find(t => t.status === 'in_progress')?.content ??
       (taskList.length ? (doneCount === taskList.length ? `all ${taskList.length} tasks done` : `${doneCount}/${taskList.length} tasks done`) : '')
     const isMainWorking = !!mainItem && mainItem.at > idleAt && nowAt - mainItem.at < LIVE_MS
-    const kitRows = kitRowsOf(await read($, kit), await enabledPlugins($), idleAt)
+    const kitRows = kitRowsOf(kitList, enabledList, idleAt)
     const kitActive = kitRows.filter(k => k.state === 'active').length
     // Only skills in use get a full card; the rest, used earlier or not yet, sit in the chip grid.
     const kitLive = kitRows.filter(k => k.state === 'active')
     const kitShown = kitLive.slice(0, SKILL_MAX)
     const kitMore = kitLive.length - kitShown.length
     const kitIdle = kitRows.filter(k => k.state !== 'active')
-    const kitText = kitShown.map(k => (
-      <Text key={`kit-${k.name}`} wrap="truncate-end">
-        <Text color={skillTint(k.name)} dimColor={k.state !== 'active'}>
-          ▣
-        </Text>{' '}
-        <Text bold={k.state === 'active'} dimColor={k.state === 'idle'}>
-          {k.name}
-        </Text>{' '}
-        <Text dimColor>
-          {k.kind} · {k.state === 'idle' ? 'not used yet' : k.state}
-        </Text>
-      </Text>
-    ))
-
-    const taskRows = taskList.map((t, i) => (
-      <Text key={`task-${i}`} wrap="truncate-end">
-        <Text color={TASK_COLOR[t.status]} dimColor={t.status === 'pending'}>
-          {TASK_GLYPH[t.status]}
-        </Text>{' '}
-        <Text dimColor={t.status !== 'in_progress'} bold={t.status === 'in_progress'}>
-          {t.content}
-        </Text>
-      </Text>
-    ))
-    const f = await read($, flow)
-    const p: Panel = await read($, panel)
-    const at = Math.max(await read($, now), ...list.map(a => a.startedAt), 0)
+    const at = Math.max(nowAt, ...list.map(a => a.startedAt), 0)
 
     const running = list.filter(a => a.status === 'running').reverse()
     const finished = list.filter(a => a.status !== 'running').reverse()
     const planned = plannedOf(f, list)
-    const usage = await $.session.usage().catch(() => null)
-    const split = await read($, mainSplit)
-    const t = totals(list, at, { costUsd: usage?.cost?.usd, startedAt: usage?.startedAt, tokens: sum(split.tokens) })
+    const t = totals(list, at, { costUsd: usage?.cost?.usd, startedAt: usage?.startedAt, tokens: sum(split.tokens) }, subs)
     // The pane's title says "Agents"; inside, only the flow's own name.
     const title = f && !f.isFinished ? f.title : ''
 
-    const toggleCompact = (
-      <Button
-        key="compact"
-        label={p.isCompact ? `▾ ${s.expand}` : `▴ ${s.collapse}`}
-        plain
-        onPress={() => update($, panel, prev => ({ ...prev, isCompact: !prev.isCompact }))}
-      />
-    )
-    const toggleDone = (
-      <Button
-        key="done"
-        label={`${p.isDoneCollapsed ? (isRtl() ? '◂' : '▸') : '▾'} ${s.finished} · ${finished.length}`}
-        plain
-        onPress={() => update($, panel, prev => ({ ...prev, isDoneCollapsed: !prev.isDoneCollapsed }))}
-      />
-    )
     const isEmpty = list.length === 0 && planned.length === 0 && bgList.length === 0 && taskList.length === 0
     const summary = `≈${fmtCost(t.cost)}, ${fmtTokens(t.tokens)} ${s.tokensWord}, ${fmtTime(t.time)}`
 
@@ -1877,14 +1892,6 @@ export const register: Register = (on, options) => {
       const W = Math.max(240, Math.min(900, (e.props.bodyColumns || 40) * 8 - 8))
       // In Hebrew the column hugs the right edge: section heads and buttons right-aligned.
       const align = isRtl() ? 'flex-end' : undefined
-      if (p.isCompact) {
-        return (
-          <Box flexDirection="column" gap={1} alignItems={align}>
-            <Svg source={compactSvg(W, list, planned, t)} alt={`${list.length} ${s.agentsCount}, ${summary}`} width={W} height={32} />
-            {toggleCompact}
-          </Box>
-        )
-      }
       // Row 2 is two columns once the pane is wide enough: the crew (main session, subagents,
       // tasks, background) on the left, skills and plugins on the right.
       const isTwoCol = W >= 560
@@ -1892,7 +1899,7 @@ export const register: Register = (on, options) => {
       const CARD_IN = 24
       // A card's header row, its top and bottom border, its inner top and bottom padding, and its one-row bottom margin.
       const CARD_PAD = 8
-      const CARD_CHROME = LINE_H + 12 + CARD_PAD * 2 + ROW_PX
+      const CARD_CHROME = ROW_PX + 12 + CARD_PAD * 2 + ROW_PX
       const colW = (isTwoCol ? Math.floor(W / 2) - 18 : W) - CARD_IN
 
       // A section header hides or shows all of its rows; each card scrolls on its own under the wheel.
@@ -1901,44 +1908,49 @@ export const register: Register = (on, options) => {
         update($, panel, prev =>
           k === 'done' ? { ...prev, isDoneCollapsed: !prev.isDoneCollapsed } : { ...prev, collapsed: { ...prev.collapsed, [k]: !prev.collapsed?.[k] } },
         )
-      type Item = { key: string; h: number; node: unknown }
+      // `node` draws the item, and runs only for the items a card shows: rows scrolled away build no drawing.
+      type Item = { key: string; h: number; node: () => unknown }
+      // A row with tool calls gets a toggle on its title line; pressed, its calls list under it.
+      type Row = { key: string; node: () => unknown; extra: Item[] }
       const sectionHead = (k: string, label: string, count: string): Item => ({
         key: `h-${k}`,
-        h: LINE_H,
-        node: <Button key={`fold-${k}`} label={`${folded(k) ? (isRtl() ? '◂' : '▸') : '▾'} ${label} · ${count}`} plain onPress={() => fold(k)} />,
+        h: ROW_PX,
+        node: () => <Button key={`fold-${k}`} label={`${folded(k) ? (isRtl() ? '◂' : '▸') : '▾'} ${label} · ${count}`} plain onPress={() => fold(k)} />,
       })
       // A section's rows, each followed by its open call list.
-      const rowItems = (k: string, list: { key: string; node: unknown; extra: Item[] }[]): Item[] =>
-        folded(k) ? [] : list.flatMap(r => [{ key: r.key, h: ROW_H, node: r.node }, ...r.extra])
+      const rowItems = (k: string, list: Row[]): Item[] => (folded(k) ? [] : list.flatMap(r => [{ key: r.key, h: ROW_H, node: r.node }, ...r.extra]))
 
-      // A row with tool calls gets a toggle on its title line; pressed, its calls list under it.
-      type Row = { key: string; node: unknown; extra: Item[] }
       const CALLS_SHOWN = 20
       const isOpen = (k: string) => !!p.openRows?.includes(k)
       const toggleRow = (k: string) =>
         update($, panel, prev => ({ ...prev, openRows: prev.openRows?.includes(k) ? prev.openRows.filter(x => x !== k) : [...(prev.openRows ?? []), k].slice(-20) }))
-      const row = (key: string, src: string, alt: string, calls: WorkItem[] = []): Row => {
-        const art = <Svg key={key} source={src} alt={alt} width={colW} height={ROW_H} />
+      // `src` draws the row's picture when the row is shown.
+      const row = (key: string, src: () => string, alt: string, calls: WorkItem[] = []): Row => {
+        const art = () => <Svg key={key} source={src()} alt={alt} width={colW} height={ROW_H} />
         if (!calls.length) return { key, node: art, extra: [] }
         const open = isOpen(key)
         const shown = calls.slice(-CALLS_SHOWN)
+        // Call lines sit about 5 columns in, under the row's title.
         const callLine = (w: WorkItem, i: number): Item => ({
           key: `${key}-c${i}`,
-          h: LINE_H,
-          node: (
+          h: ROW_PX,
+          node: () => (
             <Text key={`${key}-c${i}`} wrap="truncate-end">
-              <Text color={KIND[w.kind][1]}>{`   ${KIND[w.kind][0]} `}</Text>
+              <Text color={KIND[w.kind][1]}>{`     ${KIND[w.kind][0]} `}</Text>
               <Text dimColor>{w.label}</Text>
             </Text>
           ),
         })
         return {
           key,
-          node: (
+          node: () => (
             <Box key={`${key}-box`} flexDirection="column">
-              <Svg key={key} source={src} alt={alt} width={colW} height={ROW_H} />
-              <Box key={`${key}-tog`} position="absolute" top={0} right={2}>
-                <Button key={`calls-${key}`} label={`${open ? '▾' : isRtl() ? '◂' : '▸'} ${calls.length}`} plain dimColor onPress={() => toggleRow(key)} />
+              {art()}
+              <Box key={`${key}-tog`} position="absolute" top={0} left={isRtl() ? 2 : undefined} right={isRtl() ? undefined : 2}>
+                {/* The label names the control; the glyph and count are what it draws. */}
+                <Button key={`calls-${key}`} label={`${calls.length} ${calls.length === 1 ? 'tool call' : 'tool calls'}`} plain dimColor onPress={() => toggleRow(key)}>
+                  {`${open ? '▾' : isRtl() ? '◂' : '▸'} ${calls.length}`}
+                </Button>
               </Box>
             </Box>
           ),
@@ -1946,22 +1958,29 @@ export const register: Register = (on, options) => {
             ? []
             : [
                 ...(calls.length > shown.length
-                  ? [{ key: `${key}-more`, h: LINE_H, node: <Text key={`${key}-more`} dimColor>{`   +${calls.length - shown.length} ${s.more}`}</Text> }]
+                  ? [{ key: `${key}-more`, h: ROW_PX, node: () => <Text key={`${key}-more`} dimColor>{`     +${calls.length - shown.length} ${s.more}`}</Text> }]
                   : []),
                 ...shown.map(callLine),
               ],
         }
       }
-      const agentCalls = (a: AgentRun) => callsOf(workList, a.agentId)
-      const taskCalls = (t: Task) => (t.startedAt === undefined ? [] : callsOf(workList, 'main', t.startedAt, t.endedAt))
+      // The calls grouped by who made them, once a draw; a task's are the main session's made while it was in progress.
+      const byWho = new Map<string, WorkItem[]>()
+      for (const w of workList) {
+        const mine = byWho.get(w.who)
+        if (mine) mine.push(w)
+        else byWho.set(w.who, [w])
+      }
+      const agentCalls = (a: AgentRun) => callsOf(byWho.get(a.agentId ?? '') ?? [], a.agentId)
+      const taskCalls = (t: Task) => (t.startedAt === undefined ? [] : callsOf(byWho.get('main') ?? [], 'main', t.startedAt, t.endedAt))
       const agentRow = (a: AgentRun) => {
         const calls = agentCalls(a)
-        return row(a.id, agentSvg(colW, a, at, calls.length > 0), `${a.description}: ${modelName(a.model)}, ${a.status === 'running' ? s.isRunning : s.isFinished}`, calls)
+        return row(a.id, () => agentSvg(colW, a, at, calls.length > 0), `${a.description || a.type}: ${modelName(a.model)}, ${statusWord(a.status)}`, calls)
       }
-      const bgRow = (t: BgTask) => row(`bg-${t.id}`, bgSvg(colW, t, nowAt), `${t.kind}: ${t.label}, ${t.status}`)
+      const bgRow = (t: BgTask) => row(`bg-${t.id}`, () => bgSvg(colW, t, nowAt), `${t.kind}: ${t.label}, ${statusWord(t.status)}`)
       const taskRow = (t: Task, i: number) => {
         const calls = taskCalls(t)
-        return row(`task-${i}`, taskSvg(colW, t, i + 1, taskList.length, calls.length > 0), `Task ${i + 1}: ${t.content}, ${t.status}`, calls)
+        return row(`task-${i}`, () => taskSvg(colW, t, i + 1, taskList.length, calls.length > 0), `Task ${i + 1}: ${t.content}, ${statusWord(t.status)}`, calls)
       }
       // A step handed to a subagent whose description is the step's text shows as that agent's row (its type and model), not twice.
       const handed = new Set([...running, ...finished].map(a => norm(a.description)))
@@ -1969,14 +1988,15 @@ export const register: Register = (on, options) => {
         taskList.map((t, i) => ({ t, i })).filter(x => x.t.status === st && !handed.has(norm(x.t.content))).map(x => taskRow(x.t, x.i))
       const runAll: Row[] = [...running.map(agentRow), ...bgList.filter(t => t.status === 'running').map(bgRow), ...tasksAt('in_progress')]
       const planAll: Row[] = [
-        ...planned.map(pl => row(`plan-${pl.n}`, plannedSvg(colW, pl), `${pl.n}. ${pl.title}: ${s.isPlanned}`)),
+        ...planned.map(pl => row(`plan-${pl.n}`, () => plannedSvg(colW, pl), `${pl.n}. ${pl.title}: ${s.isPlanned}`)),
         ...tasksAt('pending'),
       ]
       const doneAll: Row[] = [...finished.map(agentRow), ...bgList.filter(t => t.status !== 'running').map(bgRow), ...tasksAt('completed')]
 
+      const mainAlt = [`${s.mainSession}${split.model ? `, ${modelName(split.model)}` : ''}`, mainStep].filter(Boolean).join(': ')
       const crewItems: Item[] = [
-        { key: 'main', h: MAIN_ROW_H, node: <Svg key="main" source={mainRowSvg(colW, mainStep, mainItem, isMainWorking, split.model)} alt={`Main session${split.model ? `, ${modelName(split.model)}` : ''}: ${mainStep}`} width={colW} height={MAIN_ROW_H} /> },
-        ...(isEmpty ? [{ key: 'empty', h: LINE_H, node: <Text key="empty" dimColor>{s.empty}</Text> }] : []),
+        { key: 'main', h: MAIN_ROW_H, node: () => <Svg key="main" source={mainRowSvg(colW, mainStep, mainItem, isMainWorking, split.model)} alt={mainAlt} width={colW} height={MAIN_ROW_H} /> },
+        ...(isEmpty ? [{ key: 'empty', h: ROW_PX, node: () => <Text key="empty" dimColor>{s.empty}</Text> }] : []),
         // Subagents, background jobs and tasks share the sections: only running or not sets them apart.
         ...(runAll.length ? [sectionHead('run', s.running, String(runAll.length))] : []),
         ...rowItems('run', runAll),
@@ -1986,17 +2006,23 @@ export const register: Register = (on, options) => {
         ...rowItems('done', doneAll),
       ]
       const kitItems: Item[] = [
-        ...(kitRows.length === 0 ? [{ key: 'kit-none', h: LINE_H, node: <Text key="kit-none" dimColor>No skills or plugins seen yet.</Text> }] : []),
-        ...kitShown.map(r => ({ key: `kit-${r.name}`, h: SKILL_ROW_H, node: <Svg key={`kit-${r.name}`} source={kitRowSvg(colW, r, list, nowAt)} alt={`${r.kind} ${r.name}: ${r.state}`} width={colW} height={SKILL_ROW_H} /> })),
-        ...(kitMore > 0 ? [{ key: 'kit-more', h: LINE_H, node: <Text key="kit-more" dimColor>+{kitMore} more in use</Text> }] : []),
-        ...(kitIdle.length
-          ? [{ key: 'kit-idle', h: kitIdleHeight(kitIdle.length), node: <Svg key="kit-idle" source={kitIdleSvg(colW, kitIdle)} alt={`Not in use: ${kitIdle.map(k => k.name).join(', ')}`} width={colW} height={kitIdleHeight(kitIdle.length)} /> }]
-          : []),
+        ...(kitRows.length === 0 ? [{ key: 'kit-none', h: ROW_PX, node: () => <Text key="kit-none" dimColor>{s.kitEmpty}</Text> }] : []),
+        ...kitShown.map(r => ({ key: `kit-${r.name}`, h: SKILL_ROW_H, node: () => <Svg key={`kit-${r.name}`} source={kitRowSvg(colW, r, list)} alt={`${r.kind} ${r.name}: ${s.active}`} width={colW} height={SKILL_ROW_H} /> })),
+        ...(kitMore > 0 ? [{ key: 'kit-more', h: ROW_PX, node: () => <Text key="kit-more" dimColor>+{kitMore} more in use</Text> }] : []),
+        ...Array.from({ length: Math.ceil(kitIdle.length / 2) }, (_, j): Item => {
+          const pair = kitIdle.slice(j * 2, j * 2 + 2)
+          const top = j ? 0 : CHIP_TOP
+          return {
+            key: `kit-idle-${j}`,
+            h: top + CHIP_H,
+            node: () => <Svg key={`kit-idle-${j}`} source={kitIdleSvg(colW, pair, top)} alt={`${s.notActive}: ${pair.map(k => k.name).join(', ')}`} width={colW} height={top + CHIP_H} />,
+          }
+        }),
       ]
       const heightOf = (items: Item[]) => items.reduce((n, i) => n + i.h, 0)
 
       // Card heights: the pane is shared out so the cards fill it and only their insides scroll.
-      // shortcut: assumes a desktop row is GRID_STEP px (as the grid does); with no bodyRows the cards take their natural height.
+      // shortcut: assumes a desktop row is ROW_PX px; with no bodyRows the cards take their natural height.
       const bodyRows = e.props.scroll?.bodyRows || 0
       const paneH = bodyRows * ROW_PX
       const headerH = headerHeight(title)
@@ -2016,7 +2042,8 @@ export const register: Register = (on, options) => {
         let h = 0
         for (let i = items.length - 1; i >= 0; i--) {
           h += items[i].h
-          if (h > bodyH) return i + 1
+          // Never past the last item: an item taller than the card still shows from its top.
+          if (h > bodyH) return Math.min(i + 1, items.length - 1)
         }
         return 0
       }
@@ -2034,13 +2061,13 @@ export const register: Register = (on, options) => {
         }
         rects.push({ key: k, x, y, w: w + CARD_IN, h: H, max, step: 1 })
         return (
-          <Box key={`card-${k}`} flexDirection="column" flexGrow={fill ? 1 : 0} overflow="hidden" borderStyle="round" borderColor={EDGE} paddingX={1} marginBottom={1}>
+          <Box key={`card-${k}`} flexDirection="column" flexGrow={fill ? 1 : 0} overflow="hidden" borderStyle="round" borderColor={EDGE} paddingX={1} marginBottom={k === "crew" && !isTwoCol ? 1 : 0}>
             {spacer(`${k}-top`, w, CARD_PAD)}
             <Box key={`card-${k}-head`} flexDirection="row" gap={2} alignItems="center">
               <Text bold>{head}</Text>
               {count && <Text dimColor>{count}</Text>}
             </Box>
-            {shown.map(it => it.node as never)}
+            {shown.map(it => it.node() as never)}
             {/* Filling, the card stretches to the window in rows; a px pad from the guessed row height fell short. */}
             {fill && <Box key={`${k}-pad`} flexGrow={1} />}
             {spacer(`${k}-bottom`, w, CARD_PAD)}
@@ -2048,14 +2075,16 @@ export const register: Register = (on, options) => {
         )
       }
       const colX = isTwoCol ? Math.floor(W / 2) : 0
+      // A card's count is the sum of its sections; a card with none shows no count.
+      const crewCount = runAll.length + planAll.length + doneAll.length
       const left = (
         <Box key="col-crew" flexDirection="column" width={isTwoCol ? '50%' : undefined} flexGrow={fill ? 1 : 0} flexShrink={0} alignItems={align} paddingRight={isTwoCol ? 1 : 0}>
-          {listCard('crew', 'Agents', `${runAll.length} running · ${doneAll.length} done`, crewItems, crewH, colW, isRtl() && isTwoCol ? colX : 0, headerH)}
+          {listCard('crew', s.pane, crewCount ? String(crewCount) : '', crewItems, crewH, colW, isRtl() && isTwoCol ? colX : 0, headerH)}
         </Box>
       )
       const right = (
         <Box key="col-kit" flexDirection="column" width={isTwoCol ? '50%' : undefined} flexGrow={fill && isTwoCol ? 1 : 0} flexShrink={0} alignItems={align} paddingLeft={isTwoCol ? 1 : 0}>
-          {listCard('kit', 'Skills & plugins', `${kitActive} active · ${kitIdle.length} idle`, kitItems, kitH, colW, isTwoCol ? (isRtl() ? 0 : colX) : 0, isTwoCol ? headerH : headerH + crewH)}
+          {listCard('kit', s.kit, kitRows.length ? `${kitActive} ${s.active} · ${kitIdle.length} ${s.notActive}` : '', kitItems, kitH, colW, isTwoCol ? (isRtl() ? 0 : colX) : 0, isTwoCol ? headerH : headerH + crewH)}
         </Box>
       )
 
@@ -2073,7 +2102,7 @@ export const register: Register = (on, options) => {
           {/* The grid sizes the pane; the content is placed over it, as an
               absolute Box paints over the siblings before it. */}
           {gridTiles(gridH).map((tileH, i) => (
-            <Svg key={`grid-${i}`} source={gridSvg(W, tileH)} alt="dotted grid" width={W} height={tileH} />
+            <Svg key={`grid-${i}`} source={gridSvg(W, tileH)} alt="" width={W} height={tileH} />
           ))}
           {/* Filling, the overlay spans the window's rows (parked: rows 1 to bodyRows), so row 2 can stretch. */}
           <Box flexDirection="column" position="absolute" top={paneParked ? 1 : 0} bottom={fill ? (paneParked ? 1 : 0) : undefined} left={0} right={0} alignItems={align}>
@@ -2120,6 +2149,52 @@ export const register: Register = (on, options) => {
     }
 
     // Terminal: the same content in text rows.
+    const toggleCompact = (
+      <Button
+        key="compact"
+        label={p.isCompact ? `▾ ${s.expand}` : `▴ ${s.collapse}`}
+        plain
+        onPress={() => update($, panel, prev => ({ ...prev, isCompact: !prev.isCompact }))}
+      />
+    )
+    const toggleDone = (
+      <Button
+        key="done"
+        label={`${p.isDoneCollapsed ? (isRtl() ? '◂' : '▸') : '▾'} ${s.finished} · ${finished.length}`}
+        plain
+        onPress={() => update($, panel, prev => ({ ...prev, isDoneCollapsed: !prev.isDoneCollapsed }))}
+      />
+    )
+    const bgRows = bgList.map(t => (
+      <Text key={`bg-${t.id}`} wrap="truncate-end">
+        <Text color={tintOf(t.id)}>▪</Text>{' '}
+        <Text color={t.status === 'failed' ? 'red' : t.status === 'done' ? 'green' : undefined}>{STATUS_GLYPH[t.status]}</Text> {t.kind} · {t.label}
+      </Text>
+    ))
+    // Every state, not only active ones, so the list matches its "N active of M" head.
+    const kitText = kitRows.slice(0, SKILL_MAX).map(k => (
+      <Text key={`kit-${k.name}`} wrap="truncate-end">
+        <Text color={skillTint(k.name)} dimColor={k.state !== 'active'}>
+          ▣
+        </Text>{' '}
+        <Text bold={k.state === 'active'} dimColor={k.state === 'idle'}>
+          {k.name}
+        </Text>{' '}
+        <Text dimColor>
+          {k.kind} · {k.state === 'idle' ? 'not used yet' : k.state}
+        </Text>
+      </Text>
+    ))
+    const taskRows = taskList.map((t, i) => (
+      <Text key={`task-${i}`} wrap="truncate-end">
+        <Text color={TASK_COLOR[t.status]} dimColor={t.status === 'pending'}>
+          {TASK_GLYPH[t.status]}
+        </Text>{' '}
+        <Text dimColor={t.status !== 'in_progress'} bold={t.status === 'in_progress'}>
+          {t.content}
+        </Text>
+      </Text>
+    ))
     const cols = Math.max(24, e.props.bodyColumns || 40)
     const barW = Math.max(6, Math.min(20, cols - 34))
     const row = (a: AgentRun) => {
@@ -2182,7 +2257,7 @@ export const register: Register = (on, options) => {
         ) : (
           <Box flexDirection="column" marginTop={1}>
             <Text wrap="truncate-end">
-              <Text color={CLAY}>▣</Text> <Text bold>Main session</Text>
+              <Text color={CLAY}>▣</Text> <Text bold>{s.mainSession}</Text>
               {split.model ? <Text dimColor>{` · ${modelName(split.model)}`}</Text> : null} <Text dimColor>{mainStep || (mainItem ? `${KIND[mainItem.kind][0]} ${mainItem.label}` : '')}</Text>
             </Text>
             {isEmpty && <Text dimColor>{s.empty}</Text>}
@@ -2206,11 +2281,11 @@ export const register: Register = (on, options) => {
                 </Box>
               )
             })}
-            {taskList.length > 0 && <Text dimColor>Tasks · {doneCount}/{taskList.length}</Text>}
+            {taskList.length > 0 && <Text dimColor>{s.tasks} · {doneCount}/{taskList.length}</Text>}
             {taskRows}
             {bgList.length > 0 && <Text dimColor>Background · {bgList.length}</Text>}
             {bgRows}
-            <Text dimColor>Skills & plugins · {kitActive} active of {kitRows.length}</Text>
+            <Text dimColor>{s.kit} · {kitActive} active of {kitRows.length}</Text>
             {kitText}
           </Box>
         )}
@@ -2224,13 +2299,13 @@ export const register: Register = (on, options) => {
     // never nested: the desktop drops a band that nests it.
     const drawn = await Promise.resolve(next(e)).catch(() => null)
     const below = drawn && typeof drawn === 'object' && (drawn as { type?: string }).type !== 'engine' ? drawn : null
-    const beneath = new Set(next.trace.filter(t => t.outcome !== 'skipped').map(t => t.plugin))
-    const f = await read($, flow)
+    const beneath = new Set(next.trace.filter(t => t.outcome !== 'skipped' && t.plugin !== 'engine').map(t => t.plugin))
+    const stored = await read($, flow)
     const ws = beneath.has('ribbon') ? await read($, windows) : []
     // This band stands in for ribbon's and ponytail's rows; any other band is kept.
     const isOurs = [...beneath].every(p => p === 'ribbon' || p === 'ponytail')
     // Nothing to draw yet (no plan, ribbon's windows not read): still hide their rows.
-    if (f === null && ws.length === 0) {
+    if (stored === null && ws.length === 0) {
       if (beneath.size === 0 || !isOurs) return drawn ?? next(e)
       const { Box } = $.ui.resolve(e)
       return <Box />
@@ -2240,11 +2315,13 @@ export const register: Register = (on, options) => {
     const ui = $.ui.resolve(e)
     const { Box, Text, Button } = ui
     const list = await read($, agents)
+    // Workers running now, from the agents list: the bar's faint layer and the label's count.
+    const f = stored && { ...stored, running: list.filter(a => a.status === 'running' && tierOf(a.type) !== 'other').length }
     const crew = list.length + (f ? plannedOf(f, list).length : 0)
     const isWorking = list.some(a => a.status === 'running')
     // The clock is read only for the usage resets: a band without them needs no clock.
     const at = ws.length ? await $.clock.now() : 0
-    const crewButton = <Button key="hideout-agents" label={`×${crew}`} plain onPress={() => void togglePane($)} />
+    const crewButton = <Button key="hideout-agents" label={`${crew} ${tr().agentsCount}`} plain onPress={() => void togglePane($)} />
     const dismiss = f && <Button key="hideout-dismiss" label="✕" plain role="dismiss" onPress={() => update($, flow, () => null)} />
     const percent = f ? `${Math.round(ratio(f) * 100)}%` : ''
     const usageAlt = ws.map(w => `${windowName(w.kind)} ${Math.max(0, Math.round(100 - w.percentUsed))}% left`).join(', ')

@@ -30,7 +30,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
 
     const ui = await $.ui.mount({ plugin: PLUGIN, surface, component: 'AbovePrompt', props: band })
     // Two planned tasks, none started: the crew button counts both.
-    expect((await ui.find({ key: 'hideout-agents' }))?.props.label).toBe('×2')
+    expect((await ui.find({ key: 'hideout-agents' }))?.props.label).toBe('2 agents')
 
     await $.tool.call({ tool: PROGRESS, done: 1 } as never)
     expect(opened).toEqual(['hideout-agents'])
@@ -49,7 +49,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(reported).toMatchObject({ result: 'ok: Tasks 0/200' })
 
     const bar = await $.ui.mount({ plugin: PLUGIN, surface, component: 'AbovePrompt', props: band })
-    expect((await bar.find({ key: 'hideout-agents' }))?.props.label).toBe('×200')
+    expect((await bar.find({ key: 'hideout-agents' }))?.props.label).toBe('200 agents')
 
     const ui = await $.ui.mount({ plugin: PLUGIN, surface, component: 'Pane', requestId: 'hideout-agents', props: pane })
     // The desktop heading is a fold button; 200 planned rows scroll inside the Agents card, so the pane does not.
@@ -78,3 +78,12 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(started).toMatchObject({ result: 'ok: Tasks 0/3' })
   })
 }
+
+// The model may send any JSON: a field of the wrong type reads as absent, and nothing throws.
+test('a title that is not a string and a null task cannot break the flow', async ($, on) => {
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  const reported = await $.tool.call({ tool: PROGRESS, title: 42, phase: 'delegate', total: 'x', tasks: [null, { title: 7 }, { title: 'Real', tier: 9, after: 'no' }] } as never)
+  expect(reported).toMatchObject({ result: 'ok: Tasks 0/1' })
+  const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'desktop', component: 'AbovePrompt', props: band })
+  expect(String((await ui.find({ type: 'Svg' }))?.props.source)).toContain('savvy-flow')
+})

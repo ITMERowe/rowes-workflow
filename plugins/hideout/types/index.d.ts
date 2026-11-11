@@ -119,6 +119,10 @@ declare module 'claude-code' {
       mainIdleAt: number
       /** The main session's own model requests, summed by token kind. */
       mainSplit: Split
+      /** Every subagent's model requests, summed by token kind; outlives the agents list. */
+      subSplit: Split
+      /** Enabled plugins from settings, refreshed at SessionStart and each prompt. */
+      enabled: string[]
       panel: Panel
       now: number
     }

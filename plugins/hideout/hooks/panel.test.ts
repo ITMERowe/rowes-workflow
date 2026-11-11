@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { bandSvg, cardAt, crab, isOverdue, kitLabel, kitOf, kitRowsOf, modelTint, pluginsIn, usageSvg, useKit, workOf } from './register'
+import { bandSvg, barGroup, cardAt, crab, isOverdue, kitLabel, kitOf, kitRowsOf, modelTint, pluginsIn, usageSvg, useKit, workOf } from './register'
 
 test('a tool call becomes one work line', () => {
   expect(workOf('Edit', { file_path: 'C:\\repo\\src\\app.ts' })).toEqual(['edit', 'src/app.ts'])
@@ -20,14 +20,20 @@ test('the band holds its rows in one card and the usage row splits its width', (
   const b = bandSvg(616, [u, u])
   expect(b).toContain('class="tile ln"')
   expect((b.match(/<svg x=/g) ?? []).length).toBe(2)
+  // A finished bar twinkles under class names of its own, so a running bar in the same band keeps its timing.
+  const calm = barGroup('flow', 120, 16, 1, '#3B9C5F', 'Done', { calm: true })
+  expect(calm).toContain('class="g')
+  expect(calm).not.toContain('class="t0"')
+  expect(barGroup('flow', 120, 16, 1, '#3B9C5F', 'Done', { calm: true })).toBe(calm)
 })
 
 test('skills and plugins: used ones first, active ones on top, then enabled ones not used yet', () => {
-  expect(kitOf('Skill', { skill: 'graphify' })).toEqual(['skill', 'graphify'])
-  expect(kitOf('mcp__plugin_claude-mem_mcp-search__search', {})).toEqual(['plugin', 'claude-mem'])
-  expect(kitOf('mcp__context7__query-docs', {})).toEqual(['plugin', 'context7'])
-  expect(kitOf('mcp__ccd_turn__update_plan', {})).toBeNull()
-  expect(kitOf('Read', {})).toBeNull()
+  // A Skill call is counted once, at skill.prompt, not again as a tool call.
+  expect(kitOf('Skill')).toBeNull()
+  expect(kitOf('mcp__plugin_claude-mem_mcp-search__search')).toEqual(['plugin', 'claude-mem'])
+  expect(kitOf('mcp__context7__query-docs')).toEqual(['plugin', 'context7'])
+  expect(kitOf('mcp__ccd_turn__update_plan')).toBeNull()
+  expect(kitOf('Read')).toBeNull()
   let uses = useKit([], 'skill', 'graphify', 'main', 0)
   uses = useKit(uses, 'plugin', 'context7', 'a1', 1_000_000)
   uses = useKit(uses, 'skill', 'graphify', 'main', 10)

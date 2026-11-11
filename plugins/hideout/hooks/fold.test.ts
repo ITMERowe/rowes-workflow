@@ -24,11 +24,14 @@ test('desktop: a task row with tool calls lists them when its toggle is pressed'
   await $.tool.call({ tool: 'Read', file_path: '/repo/hooks/register.tsx' } as never)
   const ui = await $.ui.mount({ plugin: 'hideout', surface: 'desktop', component: 'Pane', requestId: 'hideout-agents', props: pane })
   // The running task has one call; the pending one has none, so no toggle.
-  expect((await ui.find({ key: 'calls-task-0' }))?.props.label).toBe('▸ 1')
+  // The toggle draws its glyph and count; its label names it for a screen reader.
+  const toggle = async () => await ui.find({ key: 'calls-task-0' })
+  expect((await toggle())?.props.label).toBe('1 tool call')
+  expect(String((await toggle())?.children)).toBe('▸ 1')
   expect(await ui.find({ key: 'calls-task-1' })).toBeFalsy()
   expect(await ui.find({ type: 'Text', text: /hooks\/register\.tsx/ })).toBeFalsy()
   await ui.press({ key: 'calls-task-0' })
-  expect((await ui.find({ key: 'calls-task-0' }))?.props.label).toBe('▾ 1')
+  expect(String((await toggle())?.children)).toBe('▾ 1')
   expect(await ui.find({ type: 'Text', text: /hooks\/register\.tsx/ })).toBeTruthy()
 })
 
