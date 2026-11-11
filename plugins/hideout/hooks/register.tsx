@@ -1829,7 +1829,7 @@ export const register: Register = (on, options) => {
         </Text>
       </Text>
     ))
-    const tasksDone = taskList.filter(t => t.status === 'completed').length
+
     const taskRows = taskList.map((t, i) => (
       <Text key={`task-${i}`} wrap="truncate-end">
         <Text color={TASK_COLOR[t.status]} dimColor={t.status === 'pending'}>
@@ -1875,19 +1875,6 @@ export const register: Register = (on, options) => {
     if (e.surface === 'desktop' && 'Svg' in ui) {
       const { Svg } = ui
       const W = Math.max(240, Math.min(900, (e.props.bodyColumns || 40) * 8 - 8))
-      // One heading style: the label bold, the count after it dim.
-      const section = (key: string, text: string) => {
-        const [head, ...rest] = text.split(' · ')
-        return (
-          <Text key={key}>
-            <Text bold dimColor>
-              {head}
-            </Text>
-            {rest.length > 0 && <Text dimColor>{`  ${rest.join(' · ')}`}</Text>}
-          </Text>
-        )
-      }
-
       // In Hebrew the column hugs the right edge: section heads and buttons right-aligned.
       const align = isRtl() ? 'flex-end' : undefined
       if (p.isCompact) {
@@ -2006,7 +1993,7 @@ export const register: Register = (on, options) => {
           ? [{ key: 'kit-idle', h: kitIdleHeight(kitIdle.length), node: <Svg key="kit-idle" source={kitIdleSvg(colW, kitIdle)} alt={`Not in use: ${kitIdle.map(k => k.name).join(', ')}`} width={colW} height={kitIdleHeight(kitIdle.length)} /> }]
           : []),
       ]
-      const sum = (items: Item[]) => items.reduce((n, i) => n + i.h, 0)
+      const heightOf = (items: Item[]) => items.reduce((n, i) => n + i.h, 0)
 
       // Card heights: the pane is shared out so the cards fill it and only their insides scroll.
       // shortcut: assumes a desktop row is GRID_STEP px (as the grid does); with no bodyRows the cards take their natural height.
@@ -2015,8 +2002,8 @@ export const register: Register = (on, options) => {
       const headerH = headerHeight(title)
       // The tools row under the cards: the compact toggle.
       const TOOLS_H = LINE_H + 8
-      const crewNat = CARD_CHROME + sum(crewItems)
-      const kitNat = CARD_CHROME + sum(kitItems)
+      const crewNat = CARD_CHROME + heightOf(crewItems)
+      const kitNat = CARD_CHROME + heightOf(kitItems)
       const row2Nat = isTwoCol ? Math.max(crewNat, kitNat) : crewNat + kitNat
       const avail = paneH - headerH - TOOLS_H - 8
       const fill = paneH > 0 && avail > 200
@@ -2049,26 +2036,27 @@ export const register: Register = (on, options) => {
         }
         rects.push({ key: k, x, y, w: w + CARD_IN, h: H, max, step: 1 })
         return (
-          <Box key={`card-${k}`} flexDirection="column" borderStyle="round" borderColor={EDGE} paddingX={1} marginBottom={1}>
+          <Box key={`card-${k}`} flexDirection="column" flexGrow={fill ? 1 : 0} overflow="hidden" borderStyle="round" borderColor={EDGE} paddingX={1} marginBottom={1}>
             {spacer(`${k}-top`, w, CARD_PAD)}
             <Box key={`card-${k}-head`} flexDirection="row" gap={2} alignItems="center">
               <Text bold>{head}</Text>
               {count && <Text dimColor>{count}</Text>}
             </Box>
             {shown.map(it => it.node as never)}
-            {fill && spacer(`${k}-pad`, w, bodyH - used)}
+            {/* Filling, the card stretches to the window in rows; a px pad from the guessed row height fell short. */}
+            {fill && <Box key={`${k}-pad`} flexGrow={1} />}
             {spacer(`${k}-bottom`, w, CARD_PAD)}
           </Box>
         )
       }
       const colX = isTwoCol ? Math.floor(W / 2) : 0
       const left = (
-        <Box key="col-crew" flexDirection="column" width={isTwoCol ? '50%' : undefined} flexShrink={0} alignItems={align} paddingRight={isTwoCol ? 1 : 0}>
+        <Box key="col-crew" flexDirection="column" width={isTwoCol ? '50%' : undefined} flexGrow={fill ? 1 : 0} flexShrink={0} alignItems={align} paddingRight={isTwoCol ? 1 : 0}>
           {listCard('crew', 'Agents', `${runAll.length} running · ${doneAll.length} done`, crewItems, crewH, colW, isRtl() && isTwoCol ? colX : 0, headerH)}
         </Box>
       )
       const right = (
-        <Box key="col-kit" flexDirection="column" width={isTwoCol ? '50%' : undefined} flexShrink={0} alignItems={align} paddingLeft={isTwoCol ? 1 : 0}>
+        <Box key="col-kit" flexDirection="column" width={isTwoCol ? '50%' : undefined} flexGrow={fill && isTwoCol ? 1 : 0} flexShrink={0} alignItems={align} paddingLeft={isTwoCol ? 1 : 0}>
           {listCard('kit', 'Skills & plugins', `${kitActive} active · ${kitIdle.length} idle`, kitItems, kitH, colW, isTwoCol ? (isRtl() ? 0 : colX) : 0, isTwoCol ? headerH : headerH + crewH)}
         </Box>
       )
@@ -2080,7 +2068,8 @@ export const register: Register = (on, options) => {
       // With nothing to scroll it fits its window exactly, so the desktop shows no scrollbar.
       paneParked = fill && rects.some(r => r.max > 0)
       paneRow = e.props.scroll?.offset ?? paneRow
-      const gridH = fill ? paneH + 3 * ROW_PX : Math.max(contentH, paneH)
+      // Filling, the box is clipped to its rows, so the grid errs tall: 32 px a row outruns any code font's line height.
+      const gridH = fill ? (bodyRows + 3) * 32 : Math.max(contentH, paneH)
       return (
         <Box flexDirection="column" height={paneParked ? bodyRows + 2 : fill ? bodyRows : undefined} overflow={fill ? 'hidden' : 'visible'}>
           {/* The grid sizes the pane; the content is placed over it, as an
@@ -2088,11 +2077,12 @@ export const register: Register = (on, options) => {
           {gridTiles(gridH).map((tileH, i) => (
             <Svg key={`grid-${i}`} source={gridSvg(W, tileH)} alt="dotted grid" width={W} height={tileH} />
           ))}
-          <Box flexDirection="column" position="absolute" top={paneParked ? 1 : 0} left={0} right={0} alignItems={align}>
+          {/* Filling, the overlay spans the window's rows (parked: rows 1 to bodyRows), so row 2 can stretch. */}
+          <Box flexDirection="column" position="absolute" top={paneParked ? 1 : 0} bottom={fill ? (paneParked ? 1 : 0) : undefined} left={0} right={0} alignItems={align}>
             {/* Row 1: cost, tokens and time. */}
             <Svg source={headerSvg(W, title, t)} alt={title ? `${title}: ${summary}` : summary} width={W} height={headerH} />
             {/* Row 2: the crew beside the skills and plugins. */}
-            <Box flexDirection={isTwoCol ? (isRtl() ? 'row-reverse' : 'row') : 'column'}>
+            <Box flexDirection={isTwoCol ? (isRtl() ? 'row-reverse' : 'row') : 'column'} flexGrow={fill ? 1 : 0}>
               {left}
               {right}
             </Box>
@@ -2222,7 +2212,7 @@ export const register: Register = (on, options) => {
                 </Box>
               )
             })}
-            {taskList.length > 0 && <Text dimColor>Tasks · {tasksDone}/{taskList.length}</Text>}
+            {taskList.length > 0 && <Text dimColor>Tasks · {doneCount}/{taskList.length}</Text>}
             {taskRows}
             {bgList.length > 0 && <Text dimColor>Background · {bgList.length}</Text>}
             {bgRows}
