@@ -2000,12 +2000,10 @@ export const register: Register = (on, options) => {
       const bodyRows = e.props.scroll?.bodyRows || 0
       const paneH = bodyRows * ROW_PX
       const headerH = headerHeight(title)
-      // The tools row under the cards: the compact toggle.
-      const TOOLS_H = LINE_H + 8
       const crewNat = CARD_CHROME + heightOf(crewItems)
       const kitNat = CARD_CHROME + heightOf(kitItems)
       const row2Nat = isTwoCol ? Math.max(crewNat, kitNat) : crewNat + kitNat
-      const avail = paneH - headerH - TOOLS_H - 8
+      const avail = paneH - headerH - 8
       const fill = paneH > 0 && avail > 200
       const row2H = fill ? avail : row2Nat
       const crewH = !fill ? crewNat : isTwoCol ? row2H : Math.min(crewNat, Math.max(Math.floor(row2H * 0.6), row2H - kitNat))
@@ -2063,7 +2061,7 @@ export const register: Register = (on, options) => {
 
       cardRects = rects
       // Every row sits in the absolute overlay, so all of them must size the grid or they are clipped.
-      const contentH = headerH + row2H + TOOLS_H + 8
+      const contentH = headerH + row2H + 8
       // A pane with a card to scroll is parked (see paneParked): two rows of slack, the content one row down.
       // With nothing to scroll it fits its window exactly, so the desktop shows no scrollbar.
       paneParked = fill && rects.some(r => r.max > 0)
@@ -2085,10 +2083,6 @@ export const register: Register = (on, options) => {
             <Box flexDirection={isTwoCol ? (isRtl() ? 'row-reverse' : 'row') : 'column'} flexGrow={fill ? 1 : 0}>
               {left}
               {right}
-            </Box>
-            {/* Row 3: tools. */}
-            <Box key="tools-row" flexDirection="row" gap={3} marginTop={1}>
-              {toggleCompact}
             </Box>
             {/* Tooltips last, so they paint over the cards. A keyed Box over each tile is the hover
                 scope; its card shows on hover. An image, not an interactive SVG frame: a frame
