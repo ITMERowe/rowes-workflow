@@ -1914,8 +1914,14 @@ export const register: Register = (on, options) => {
       type Row = { key: string; node: () => unknown; extra: Item[] }
       const sectionHead = (k: string, label: string, count: string): Item => ({
         key: `h-${k}`,
-        h: ROW_PX,
-        node: () => <Button key={`fold-${k}`} label={`${folded(k) ? (isRtl() ? '◂' : '▸') : '▾'} ${label} · ${count}`} plain onPress={() => fold(k)} />,
+        // An 8px gap above each head, so folded heads do not stack flush.
+        h: ROW_PX + 8,
+        node: () => (
+          <Box key={`h-${k}`} flexDirection="column">
+            {spacer(`h-${k}-gap`, colW, 8)}
+            <Button key={`fold-${k}`} label={`${folded(k) ? (isRtl() ? '◂' : '▸') : '▾'} ${label} · ${count}`} plain onPress={() => fold(k)} />
+          </Box>
+        ),
       })
       // A section's rows, each followed by its open call list.
       const rowItems = (k: string, list: Row[]): Item[] => (folded(k) ? [] : list.flatMap(r => [{ key: r.key, h: ROW_H, node: r.node }, ...r.extra]))
