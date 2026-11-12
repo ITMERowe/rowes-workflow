@@ -94,9 +94,6 @@ type Lang = 'en' | 'ru' | 'he'
 const STRINGS = {
   en: {
     pane: 'Agents',
-    cost: 'Cost',
-    tokens: 'Tokens',
-    time: 'Time',
     collapse: 'Collapse',
     expand: 'Expand',
     running: 'Running',
@@ -120,17 +117,7 @@ const STRINGS = {
     review: 'Review',
     busy: 'running',
     ctx: 'ctx',
-    tipEstimate: 'estimated from token counts and list prices',
-    tipEngine: 'Claude Code total',
-    tipTokens: 'summed over every model request',
-    tipResend: 'Each request sends the whole context again, mostly as cheap cache reads.',
     mainSession: 'Main session',
-    subagents: 'Subagents',
-    requests: 'requests',
-    input: 'input',
-    output: 'output',
-    cacheRead: 'cache reads',
-    cacheWrite: 'cache writes',
     more: 'more',
     isFailed: 'failed',
     kit: 'Skills & plugins',
@@ -138,14 +125,14 @@ const STRINGS = {
     noTasks: 'No task list yet.',
     active: 'active',
     notActive: 'not active',
+    hideout: 'Hideout',
+    home: 'home',
+    out: 'out',
     tier: { light: 'light', medium: 'medium', careful: 'careful', heavy: 'heavy', fable: 'fable', other: 'other' },
     effort: { low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', max: 'max' },
   },
   ru: {
     pane: 'Агенты',
-    cost: 'Стоимость',
-    tokens: 'Токены',
-    time: 'Время',
     collapse: 'Свернуть',
     expand: 'Развернуть',
     running: 'Работают',
@@ -169,17 +156,7 @@ const STRINGS = {
     review: 'Ревью',
     busy: 'в работе',
     ctx: 'ctx',
-    tipEstimate: 'оценка по числу токенов и прайс-листу',
-    tipEngine: 'итог Claude Code',
-    tipTokens: 'сумма по всем запросам к модели',
-    tipResend: 'Каждый запрос заново отправляет весь контекст, в основном как дешёвое чтение кэша.',
     mainSession: 'Основная сессия',
-    subagents: 'Субагенты',
-    requests: 'запросов',
-    input: 'ввод',
-    output: 'вывод',
-    cacheRead: 'чтение кэша',
-    cacheWrite: 'запись кэша',
     more: 'ещё',
     isFailed: 'сбой',
     kit: 'Навыки и плагины',
@@ -187,14 +164,14 @@ const STRINGS = {
     noTasks: 'Списка задач пока нет.',
     active: 'активны',
     notActive: 'не активны',
+    hideout: 'Убежище',
+    home: 'дома',
+    out: 'в деле',
     tier: { light: 'light', medium: 'medium', careful: 'careful', heavy: 'heavy', fable: 'fable', other: 'other' },
     effort: { low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', max: 'max' },
   },
   he: {
     pane: 'סוכנים',
-    cost: 'עלות',
-    tokens: 'טוקנים',
-    time: 'זמן',
     collapse: 'כיווץ',
     expand: 'הרחבה',
     running: 'פועלים',
@@ -218,17 +195,7 @@ const STRINGS = {
     review: 'בדיקה',
     busy: 'בעבודה',
     ctx: 'הקשר',
-    tipEstimate: 'הערכה לפי ספירת טוקנים ומחירון',
-    tipEngine: 'סה״כ של Claude Code',
-    tipTokens: 'סכום על כל בקשות המודל',
-    tipResend: 'כל בקשה שולחת שוב את כל ההקשר, בעיקר כקריאות מטמון זולות.',
     mainSession: 'סשן ראשי',
-    subagents: 'סוכני משנה',
-    requests: 'בקשות',
-    input: 'קלט',
-    output: 'פלט',
-    cacheRead: 'קריאות מטמון',
-    cacheWrite: 'כתיבות מטמון',
     more: 'נוספים',
     isFailed: 'נכשל',
     kit: 'מיומנויות ותוספים',
@@ -236,6 +203,9 @@ const STRINGS = {
     noTasks: 'עדיין אין רשימת משימות.',
     active: 'פעילים',
     notActive: 'לא פעילים',
+    hideout: 'מחבוא',
+    home: 'בבית',
+    out: 'בחוץ',
     tier: { light: 'קל', medium: 'בינוני', careful: 'זהיר', heavy: 'כבד', fable: 'פייבל', other: 'אחר' },
     effort: { low: 'נמוך', medium: 'בינוני', high: 'גבוה', xhigh: 'גבוה מאוד', max: 'מקסימלי' },
   },
@@ -980,90 +950,6 @@ export const modelTint = (model: string): string | undefined => SHELL_TINT.find(
 const svg = (W: number, H: number, body: string): string =>
   `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${PANE_CSS}${CRAB_CSS}${body}</svg>`
 
-// The pane's own title already says "Agents": the header names the flow, if any.
-// Hover text for the cost and tokens tiles: where the figure comes from, main session by token
-// kind, then each subagent. Plain lines, shown in a card when the pointer is over the tile.
-const TIP_AGENTS = 5
-
-const kindLines = (s: Split, by: 'usd' | 'tokens'): string[] => {
-  const t = tr()
-  const names = [t.input, t.output, t.cacheRead, t.cacheWrite]
-  return names
-    .map((name, k) => ({ name, tokens: s.tokens[k] ?? 0, usd: s.usd[k] ?? 0 }))
-    .filter(x => x.tokens > 0)
-    .sort((a, b) => b[by] - a[by])
-    .map(x => `  ${x.name}: ${fmtTokens(x.tokens)} · ≈${fmtCost(x.usd)}`)
-}
-
-const agentLines = (list: readonly AgentRun[], value: (a: AgentRun) => number, fmt: (n: number) => string): string[] => {
-  const top = [...list].sort((a, b) => value(b) - value(a))
-  const lines = top.slice(0, TIP_AGENTS).map(a => `  ${fitText(a.description || a.type, 11, 220)} · ${modelName(a.model)}: ${fmt(value(a))}`)
-  return top.length > TIP_AGENTS ? [...lines, `  +${top.length - TIP_AGENTS} ${tr().more}`] : lines
-}
-
-export const costTip = (cost: number, engineUsd: number | undefined, s: Split, list: readonly AgentRun[]): string => {
-  const t = tr()
-  const subs = sum(list.map(a => a.costUsd))
-  return [
-    `≈${fmtCost(cost)}: ${t.tipEstimate}`,
-    ...(engineUsd !== undefined ? [`${t.tipEngine}: ${fmtCost(engineUsd)}`] : []),
-    '',
-    `${t.mainSession} ≈${fmtCost(sum(s.usd))} · ${s.requests} ${t.requests}`,
-    ...kindLines(s, 'usd'),
-    ...(list.length ? ['', `${t.subagents} ≈${fmtCost(subs)}`, ...agentLines(list, a => a.costUsd, n => '≈' + fmtCost(n))] : []),
-  ].join('\n')
-}
-
-export const tokensTip = (tokens: number, s: Split, list: readonly AgentRun[]): string => {
-  const t = tr()
-  return [
-    `${fmtTokens(tokens)}: ${t.tipTokens}`,
-    t.tipResend,
-    '',
-    `${t.mainSession} ${fmtTokens(sum(s.tokens))} · ${s.requests} ${t.requests}`,
-    ...kindLines(s, 'tokens'),
-    ...(list.length ? ['', `${t.subagents} ${fmtTokens(sum(list.map(a => a.tokens)))}`, ...agentLines(list, a => a.tokens, fmtTokens)] : []),
-  ].join('\n')
-}
-
-// The header's tiles: three across, 8px apart, 46px tall, under the flow's title when there is one.
-const TILE_GAP = 8
-const TILE_H = 46
-const tileTop = (title: string): number => (title ? 28 : 0)
-
-// Tile `i` in the pane's cells, for the Box laid over it: a desktop column is 8px, a row ROW_PX.
-export const tileBox = (W: number, title: string, i: number) => {
-  const tw = (W - TILE_GAP * 2) / 3
-  const left = Math.floor(mx(W, i * (tw + TILE_GAP), tw) / 8)
-  return {
-    top: Math.floor(tileTop(title) / ROW_PX),
-    left,
-    width: Math.floor(tw / 8),
-    height: Math.ceil(TILE_H / ROW_PX),
-    cols: Math.floor(W / 8),
-  }
-}
-
-const headerSvg = (W: number, title: string, t: ReturnType<typeof totals>): string => {
-  const s = tr()
-  const gap = TILE_GAP
-  const tw = (W - gap * 2) / 3
-  const top = tileTop(title)
-  const isZero = (v: string) => /^≈?\$?0(\.00)?$|^0:00$/.test(v)
-  const tile = (i: number, k: string, v: string) =>
-    `<g><rect class="tile ln" x="${mx(W, i * (tw + gap), tw)}" y="${top + 0.5}" width="${tw}" height="${TILE_H}" rx="10" stroke-width="1"/>
-<text class="s" ${startText(W, i * (tw + gap) + 12, top + 17)} font-family="${FONT}" font-size="11" font-weight="600" letter-spacing=".4">${k.toUpperCase()}</text>
-<text class="${isZero(v) ? 'm' : 't'}" ${startText(W, i * (tw + gap) + 12, top + 38, false)} font-family="${FONT}" font-size="18" font-weight="600" font-variant-numeric="tabular-nums">${isZero(v) ? '—' : v}</text></g>`
-  return svg(
-    W,
-    headerHeight(title),
-    `${title ? `<text class="t" ${startText(W, 0, 15)} font-family="${FONT}" font-size="13" font-weight="600">${xml(fitText(title, 13, W))}</text>` : ''}
-${tile(0, s.cost, '≈' + fmtCost(t.cost))}${tile(1, s.tokens, fmtTokens(t.tokens))}${tile(2, s.time, fmtTime(t.time))}`,
-  )
-}
-
-const headerHeight = (title: string): number => (title ? 82 : 54)
-
 // The task's own progress when the worker reports steps; a finished run is full.
 const progressOf = (a: AgentRun): number | null => {
   if (a.status === 'done') return 1
@@ -1319,6 +1205,519 @@ ${isWorking ? `<circle class="live" cx="${mx(W, W - 10)}" cy="14" r="3.5" fill="
   )
 }
 
+// --- The Hideout: the crew's tavern at night, a 3/4 pixel interior on a 16 px grid. Each costume has a seat;
+// its crab walks out of the door at the bar end while an agent in that costume is on a job, and back when it ends.
+const SCENE_H = 144
+const WALL_H = 56
+const WALK_MS = 4000
+const WOOD = ['#3b2416', '#5e3a22', '#8a5a30', '#b5793f', '#e0a85c'] as const
+const STONE = ['#2a2b33', '#4a4d5a', '#6e7284', '#9a9eaf'] as const
+// Floor rows from the back wall forward: darker toward the back.
+const FLOOR = ['#3d2516', '#432918', '#492d1b', '#4f311d', '#55351f', '#5b3921'] as const
+const WARM = '#ffd27a'
+const SHADE = '#0000005c'
+const BOTTLES = ['#3f7d4a', '#7a2f3a', '#2f5a7a', '#a8862a', '#5b3f7a'] as const
+const SEATS = ['king', 'explore', 'light', 'medium', 'careful', 'heavy', 'fable', 'other'] as const
+const DOOR = { x: 20, y: 62 }
+// The aisle in front of the bar, a step in front of the crabs leaning on it: a crab walks to it, along it, then up to the door.
+const BAR_Y = 88
+const AISLE_Y = 98
+
+// Pixels as paths, one per run of a fill, with neighbours in a row merged: the scene is thousands of
+// pixels and an Svg's source holds at most 131072 characters. Later pixels paint over earlier ones.
+const pixels = () => {
+  let out = ''
+  let fill = ''
+  let d = ''
+  let run: [number, number, number, number] | null = null
+  const endRun = () => {
+    if (run) d += `M${run[0]} ${run[1]}h${run[2]}v${run[3]}h-${run[2]}z`
+    run = null
+  }
+  const flush = () => {
+    endRun()
+    if (d) out += `<path fill="${fill}" d="${d}"/>`
+    d = ''
+  }
+  const px = (x: number, y: number, w: number, h: number, c: string): void => {
+    const [rx, ry, rw, rh] = [Math.round(x), Math.round(y), Math.round(w), Math.round(h)]
+    if (rw <= 0 || rh <= 0) return
+    if (c !== fill) {
+      flush()
+      fill = c
+    }
+    if (run && run[1] === ry && run[3] === rh && run[0] + run[2] === rx) run[2] += rw
+    else {
+      endRun()
+      run = [rx, ry, rw, rh]
+    }
+  }
+  return { px, done: () => (flush(), out) }
+}
+type Px = (x: number, y: number, w: number, h: number, c: string) => void
+
+// A shape of centred rows, `widths` from the top down: round tables, stools, disks.
+const centred = (px: Px, cx: number, top: number, widths: readonly number[], c: string): void =>
+  widths.forEach((w, k) => px(cx - w / 2, top + k, w, 1, c))
+const disk = (px: Px, cx: number, cy: number, r: number, c: string): void =>
+  centred(px, cx, cy - r, Array.from({ length: r * 2 }, (_, k) => 2 * Math.round(Math.sqrt(r * r - (k - r + 0.5) ** 2))), c)
+
+type Spot = { x: number; y: number }
+// A crab's feet; `z` orders the drawing (a crab behind a table sorts before it, one on a stool after it).
+type Seat = Spot & { z: number; isOnStool?: boolean; mug?: Spot & { z: number } }
+type TavernLayout = { W: number; barEnd: number; hx: number; t1: Spot; t2: Spot; crate: Spot; barrel: Spot; seats: Record<string, Seat> }
+
+// Wall and floor anchors from the scene width, door and bar on the left (the right in Hebrew, mirrored whole).
+const tavernLayout = (W: number): TavernLayout => {
+  const barW = Math.max(64, Math.min(136, Math.round((W * 0.22) / 8) * 8))
+  const barEnd = 40 + barW
+  const hx = Math.max(Math.round(W / 2), barEnd + 40)
+  const t1 = { x: Math.round((barEnd + hx - 30) / 2), y: 118 }
+  const t2 = { x: Math.round((hx + 30 + W) / 2), y: 128 }
+  const crate = { x: hx + 14, y: 102 }
+  const barrel = { x: W - 16, y: 98 }
+  const onBar = (x: number): Seat => ({ x, y: BAR_Y, z: BAR_Y, mug: { x: x + 7, y: 60, z: 80.5 } })
+  // Behind a table only the head and eyes clear its top.
+  const behind = (t: Spot, dx: number): Seat => ({ x: t.x + dx, y: t.y - 14, z: t.y - 1, mug: { x: t.x + dx + 5, y: t.y - 15, z: t.y + 0.5 } })
+  // By the hearth, but clear of the bar's end in a narrow pane.
+  const fableX = Math.max(hx - 48, barEnd + 14)
+  return {
+    W,
+    barEnd,
+    hx,
+    t1,
+    t2,
+    crate,
+    barrel,
+    seats: {
+      // The king's mug stands on the map, at the crate's near corner.
+      king: { x: hx - 10, y: 100, z: 100, mug: { x: crate.x - 7, y: crate.y - 14, z: crate.y + 0.5 } },
+      explore: onBar(58),
+      light: onBar(barEnd - 18),
+      medium: behind(t1, 2),
+      careful: { x: t1.x - 28, y: t1.y - 6, z: t1.y + 2.5, isOnStool: true, mug: { x: t1.x - 7, y: t1.y - 16, z: t1.y + 0.5 } },
+      heavy: behind(t2, -2),
+      fable: { x: fableX, y: 68, z: 76.5, isOnStool: true, mug: { x: fableX + 11, y: 61, z: 62 } },
+      other: { x: hx + 48, y: 74, z: 74, mug: { x: hx + 60, y: 75, z: 75 } },
+    },
+  }
+}
+
+// The stool under a seated crab: its feet rest on the seat, 6 px above the floor.
+const stool = (px: Px, cx: number, y: number): void => {
+  px(cx - 7, y - 1, 14, 2, SHADE)
+  px(cx - 5, y - 7, 1, 6, WOOD[0])
+  px(cx + 4, y - 7, 1, 6, WOOD[0])
+  px(cx - 1, y - 6, 2, 5, WOOD[0])
+  centred(px, cx, y - 10, [8, 12, 12], WOOD[3])
+  px(cx - 6, y - 8, 12, 1, WOOD[2])
+  px(cx - 3, y - 10, 4, 1, WOOD[4])
+}
+
+// A round table seen from above at an angle: the top's ellipse over its own edge, one pedestal.
+const TABLE_TOP = [14, 20, 24, 26, 28, 28, 26, 24, 20, 14]
+const table = (px: Px, cx: number, y: number): void => {
+  px(cx - 13, y - 1, 26, 2, SHADE)
+  px(cx - 6, y - 3, 12, 2, WOOD[1])
+  px(cx - 2, y - 11, 4, 9, WOOD[0])
+  px(cx - 1, y - 11, 1, 9, WOOD[1])
+  centred(px, cx, y - 20, TABLE_TOP, WOOD[1])
+  centred(px, cx, y - 23, TABLE_TOP, WOOD[3])
+  px(cx - 8, y - 22, 9, 1, WOOD[4])
+  px(cx - 5, y - 19, 12, 1, WOOD[2])
+  px(cx - 9, y - 17, 7, 1, WOOD[2])
+}
+
+// The furniture on the floor, each with the y it sorts at among the crabs.
+const tavernProps = (L: TavernLayout): { z: number; svg: string }[] => {
+  const draw = (z: number, paint: (px: Px) => void) => {
+    const p = pixels()
+    paint(p.px)
+    return { z, svg: p.done() }
+  }
+  const { barEnd, t1, t2, crate, barrel, seats } = L
+  // A narrow pane has no room right of the second table: its stool and the barrel are left out.
+  const isRoomy = barrel.x - 9 >= t2.x + 36
+  return [
+    // The bar counter: its top, then a paneled front with a contact shadow.
+    draw(80, px => {
+      px(40, 80, barEnd - 40, 3, SHADE)
+      px(40, 64, barEnd - 40, 16, WOOD[1])
+      for (let x = 46; x < barEnd - 4; x += 12) px(x, 68, 1, 10, WOOD[0])
+      px(40, 64, barEnd - 40, 2, WOOD[2])
+      px(40, 78, barEnd - 40, 2, WOOD[0])
+      px(40, 58, barEnd - 40, 6, WOOD[3])
+      px(40, 58, barEnd - 40, 1, WOOD[4])
+      px(barEnd - 3, 58, 3, 22, WOOD[2])
+    }),
+    draw(t1.y, px => table(px, t1.x, t1.y)),
+    draw(t2.y, px => table(px, t2.x, t2.y)),
+    draw(t1.y + 2, px => stool(px, t1.x - 28, t1.y + 2)),
+    draw(76, px => stool(px, seats.fable?.x ?? 0, 76)),
+    ...(!isRoomy ? [] : [
+      draw(t2.y + 4, px => stool(px, t2.x + 28, t2.y + 4)),
+      // The barrel: staves, two iron hoops and a lid seen from above.
+      draw(barrel.y, px => {
+        const { x, y } = barrel
+        px(x - 9, y - 1, 18, 2, SHADE)
+        px(x - 7, y - 19, 14, 18, WOOD[2])
+        px(x - 8, y - 16, 16, 12, WOOD[2])
+        px(x - 3, y - 19, 1, 18, WOOD[1])
+        px(x + 3, y - 19, 1, 18, WOOD[1])
+        px(x - 6, y - 18, 2, 16, WOOD[3])
+        px(x - 8, y - 15, 16, 1, STONE[1])
+        px(x - 8, y - 6, 16, 1, STONE[1])
+        centred(px, x, y - 22, [8, 12, 14, 12], WOOD[1])
+        centred(px, x, y - 21, [6, 10], WOOD[0])
+      }),
+    ]),
+    // The Tactician's crate, the campaign map spread on its lid.
+    draw(crate.y, px => {
+      const { x, y } = crate
+      px(x - 12, y - 1, 24, 2, SHADE)
+      px(x - 11, y - 10, 22, 9, WOOD[2])
+      px(x - 11, y - 7, 22, 1, WOOD[1])
+      px(x - 11, y - 4, 22, 1, WOOD[1])
+      px(x - 11, y - 10, 2, 9, WOOD[1])
+      px(x + 9, y - 10, 2, 9, WOOD[1])
+      px(x - 11, y - 15, 22, 5, WOOD[3])
+      px(x - 9, y - 16, 17, 5, '#e8d9b0')
+      px(x - 9, y - 12, 17, 1, '#c9b48a')
+      px(x - 7, y - 14, 5, 1, '#8a6a3a')
+      px(x - 1, y - 16, 1, 3, '#8a6a3a')
+      px(x + 3, y - 15, 1, 1, '#c4302b')
+      px(x + 5, y - 15, 1, 1, '#c4302b')
+      px(x + 4, y - 14, 1, 1, '#c4302b')
+    }),
+  ]
+}
+
+// Wall, floor, wall props and the hearth with its fire; the warm light on them, its edge dithered.
+const tavernBack = (L: TavernLayout): string => {
+  const { W, barEnd, hx } = L
+  const { px, done } = pixels()
+  // Floor: plank rows, a seam between rows and plank ends staggered row by row.
+  for (let k = 0; WALL_H + k * 16 < SCENE_H; k++) px(0, WALL_H + k * 16, W, 16, FLOOR[k] ?? WOOD[1])
+  const ends: Spot[] = []
+  for (let k = 0; WALL_H + k * 16 < SCENE_H; k++) {
+    for (let x = Math.floor(noise(k, 1) * 40) - 40; x < W; x += 40 + Math.floor(noise(x, k) * 32)) ends.push({ x, y: WALL_H + k * 16 })
+  }
+  for (const e of ends) px(e.x, e.y + 1, 1, 15, WOOD[0])
+  for (let k = 0; WALL_H + k * 16 < SCENE_H; k++) px(0, WALL_H + k * 16, W, 1, WOOD[0])
+  for (const e of ends) px(e.x + 5 + Math.floor(noise(e.y, e.x) * 12), e.y + 4 + Math.floor(noise(e.x, e.y) * 9), 6 + Math.floor(noise(e.x + 1, e.y) * 12), 1, '#ffffff12')
+  px(0, WALL_H, W, 2, '#1e130b')
+  // Back wall: a beam, boards with a lit edge every 16 px, a rail, then a stone base.
+  px(0, 0, W, WALL_H, WOOD[1])
+  for (let x = 16; x < W; x += 16) px(x, 6, 1, 32, WOOD[0])
+  for (let x = 17; x < W; x += 16) px(x, 6, 1, 32, '#6a4428')
+  px(0, 0, W, 5, WOOD[0])
+  px(0, 5, W, 1, '#24160d')
+  px(0, 38, W, 2, WOOD[2])
+  px(0, 40, W, 1, WOOD[0])
+  px(0, 41, W, 15, STONE[1])
+  for (let x = 0; x < W; x += 16) px(x, 41, 1, 7, STONE[0])
+  for (let x = 8; x < W; x += 16) px(x, 49, 1, 7, STONE[0])
+  px(0, 48, W, 1, STONE[0])
+  for (let x = 1; x < W; x += 16) px(x, 41, 8, 1, STONE[2])
+  for (let x = 9; x < W; x += 16) px(x, 49, 8, 1, STONE[2])
+  // The door at the bar end, in a stone frame.
+  px(4, 8, 32, 48, STONE[2])
+  px(4, 8, 32, 1, STONE[3])
+  px(8, 13, 24, 43, WOOD[2])
+  for (const x of [14, 20, 26]) px(x, 13, 1, 43, WOOD[1])
+  px(8, 19, 24, 2, STONE[0])
+  px(8, 46, 24, 2, STONE[0])
+  px(27, 32, 2, 3, '#c9a227')
+  // The wall between the bar and the hearth, when wide, gets a shelf of its own under the first lantern;
+  // right of the hearth, the window with the moon, then the notice board when there is room.
+  const left = [barEnd + 8, hx - 38] as const
+  const right = [hx + 38, W - 8] as const
+  const mid = Math.round((left[0] + left[1]) / 2)
+  const wx = Math.round(right[0] + (right[1] - right[0]) / 3)
+  const nx = Math.round(right[0] + ((right[1] - right[0]) * 2) / 3)
+  // The back bar: shelves of bottles over a rack of kegs.
+  px(38, 6, barEnd - 36, 50, '#2a190f')
+  const shelves: (readonly [x0: number, x1: number, y: number])[] = [[38, barEnd + 2, 17], [38, barEnd + 2, 30]]
+  if (left[1] - left[0] >= 60) shelves.push([mid - 32, mid + 32, 30])
+  const bottles: [number, number, string][] = []
+  for (const [x0, x1, sy] of shelves) for (let x = x0 + 5; x + 3 <= x1 - 5; x += 5 + Math.floor(noise(x, sy) * 3)) bottles.push([x, sy, BOTTLES[Math.floor(noise(sy, x) * BOTTLES.length)] ?? BOTTLES[0]])
+  for (const c of BOTTLES) for (const [x, sy, bc] of bottles) if (bc === c) {
+    px(x, sy - 7, 3, 7, c)
+    px(x + 1, sy - 9, 1, 2, c)
+  }
+  for (const [x, sy] of bottles) px(x, sy - 6, 1, 3, '#ffffff4d')
+  for (const [x0, x1, sy] of shelves) {
+    px(x0, sy, x1 - x0, 2, WOOD[2])
+    px(x0, sy + 2, x1 - x0, 1, WOOD[0])
+  }
+  for (let x = 47; x + 7 <= barEnd - 2; x += 16) {
+    disk(px, x, 47, 7, WOOD[1])
+    disk(px, x, 47, 5, WOOD[2])
+    px(x - 1, 46, 2, 2, WOOD[0])
+    px(x - 1, 50, 2, 4, '#c9a227')
+  }
+  px(38, 54, barEnd - 36, 2, WOOD[0])
+  // The hearth: a stone chimney breast, the mantel, the firebox and its two flame frames.
+  px(hx - 30, 0, 60, WALL_H, STONE[1])
+  for (let y = 0, r = 0; y < WALL_H; y += 7, r++) {
+    px(hx - 30, y, 60, 1, STONE[0])
+    for (let x = hx - 30 + (r % 2 ? 6 : 0); x < hx + 30; x += 12) px(x, y + 1, 1, 6, STONE[0])
+  }
+  for (let y = 0, r = 0; y < WALL_H; y += 7, r++) for (let x = hx - 29 + (r % 2 ? 6 : 0); x < hx + 28; x += 12) px(x, y + 1, 5, 1, STONE[2])
+  px(hx - 21, 29, 42, 27, STONE[2])
+  px(hx - 21, 29, 42, 1, STONE[3])
+  px(hx - 18, 33, 36, 23, '#120b0b')
+  px(hx - 15, 31, 30, 2, '#120b0b')
+  px(hx - 14, 40, 28, 16, '#3b160c')
+  px(hx - 10, 46, 20, 10, '#5c2410')
+  px(hx - 35, 21, 70, 4, WOOD[2])
+  px(hx - 35, 21, 70, 1, WOOD[3])
+  px(hx - 33, 25, 66, 1, WOOD[0])
+  px(hx - 24, 16, 4, 5, '#4a6a5a')
+  px(hx + 19, 17, 5, 4, STONE[2])
+  px(hx - 12, 51, 24, 3, WOOD[0])
+  px(hx - 12, 51, 24, 1, WOOD[1])
+  px(hx - 14, 54, 28, 2, '#7a2a12')
+  for (const x of [-11, -6, -1, 4, 9]) px(hx + x, 54, 1, 1, '#ff7a2a')
+  const flames = [1, 2].map(k => {
+    const f = pixels()
+    const cols: [number, number][] = []
+    for (let x = -12; x < 12; x += 2) cols.push([x, Math.round((1 - Math.abs(x + 1) / 13) * 18 * (0.5 + 0.6 * noise(x, k + 3)))])
+    for (const [c, s] of [['#c2401f', 1], ['#ff8a2a', 0.72], ['#ffc04d', 0.48], ['#fff1c4', 0.22]] as const) for (const [x, h] of cols) f.px(hx + x, 51 - Math.round(h * s), 2, Math.round(h * s), c)
+    return `<g class="fl${k}">${f.done()}</g>`
+  })
+  px(hx - 34, WALL_H, 68, 7, STONE[2])
+  px(hx - 34, WALL_H, 68, 1, STONE[3])
+  px(hx - 34, WALL_H + 7, 68, 1, STONE[0])
+  for (const x of [-12, 12]) px(hx + x, WALL_H + 1, 1, 6, STONE[1])
+  if (right[1] - right[0] >= 34) {
+    px(wx - 15, 8, 30, 28, WOOD[0])
+    px(wx - 13, 10, 26, 24, '#18203f')
+    px(wx - 13, 24, 26, 10, '#222c52')
+    px(wx - 9, 13, 4, 1, '#f2ead0')
+    px(wx - 10, 14, 6, 3, '#f2ead0')
+    px(wx - 9, 17, 4, 1, '#f2ead0')
+    px(wx - 8, 15, 1, 1, '#d8cfae')
+    for (const [x, y] of [[4, 13], [9, 16], [-4, 27], [8, 29], [3, 25]] as const) px(wx + x, y, 1, 1, '#c9d3ff')
+    px(wx - 1, 10, 2, 24, WOOD[2])
+    px(wx - 13, 21, 26, 2, WOOD[2])
+    px(wx - 16, 36, 32, 3, WOOD[3])
+    px(wx - 16, 39, 32, 1, WOOD[0])
+  }
+  if (right[1] - right[0] >= 76) {
+    px(nx - 14, 11, 28, 23, WOOD[0])
+    px(nx - 12, 13, 24, 19, '#9a6a3a')
+    px(nx - 10, 14, 9, 10, '#e8dcc0')
+    px(nx + 1, 16, 9, 8, '#d8c49a')
+    px(nx - 6, 25, 11, 6, '#efe6cf')
+    for (const [x, y, w] of [[-9, 17, 6], [-9, 19, 7], [-9, 21, 5], [2, 19, 7], [2, 21, 5], [-5, 28, 8]] as const) px(nx + x, y, w, 1, '#8a7a5a')
+    for (const [x, y] of [[-6, 14], [5, 16], [-1, 25]] as const) px(nx + x, y, 1, 1, '#c4302b')
+  }
+  // Two lanterns hang over the tables; the hearth is the one light, so they only smoulder.
+  for (const lx of [L.t1.x, L.t2.x]) {
+    px(lx, 0, 1, 9, STONE[1])
+    px(lx - 2, 8, 5, 1, STONE[0])
+    px(lx - 3, 9, 7, 11, STONE[0])
+    px(lx - 2, 11, 5, 7, '#6b3d18')
+    px(lx - 1, 14, 3, 3, '#b8672a')
+    px(lx - 1, 20, 3, 1, STONE[0])
+  }
+  // The hearth's light: a soft core cut off at LIT, then two dithered steps at the core's edge level, a checker
+  // and then a sparser one, so the falloff reads as pixels.
+  const rx = Math.max(120, Math.min(190, Math.round(W * 0.4)))
+  const ry = 92
+  const LIT = 0.72
+  const glow = pixels()
+  for (let y = 0; y < SCENE_H; y += 2) {
+    for (let x = Math.max(0, hx - rx); x < Math.min(W, hx + rx); x += 2) {
+      if (((x + y) / 2) % 2) continue
+      const d = Math.hypot((x + 1 - hx) / rx, (y + 1 - 50) / ry)
+      const density = d < LIT ? 0 : d < LIT + 0.07 ? 1 : d < LIT + 0.14 ? 0.5 : 0
+      if (noise(x, y) < density) glow.px(x, y, 2, 2, '#ffd27a1c')
+    }
+  }
+  const stop = (at: number, a: number) => `<stop offset="${at}" stop-color="${WARM}" stop-opacity="${a}"/>`
+  return `<defs><radialGradient id="tg">${stop(0, 0.34)}${stop(0.4, 0.17)}${stop(LIT, 0.11)}${stop(LIT + 0.01, 0)}</radialGradient>
+<radialGradient id="tv" cx=".5" cy=".3" r=".72"><stop offset=".45" stop-color="#07050b" stop-opacity="0"/><stop offset="1" stop-color="#07050b" stop-opacity=".85"/></radialGradient></defs>${done()}${flames.join('')}
+<ellipse cx="${hx}" cy="50" rx="${rx}" ry="${ry}" fill="url(#tg)"/>${glow.done()}`
+}
+
+// What sits over the crew: a last touch of warmth near the fire, and the dark corners.
+const tavernOver = (L: TavernLayout): string =>
+  `<ellipse cx="${L.hx}" cy="60" rx="${Math.round(Math.min(160, L.W * 0.3))}" ry="70" fill="url(#tg)" opacity=".45"/><rect width="${L.W}" height="${SCENE_H}" fill="url(#tv)"/>`
+
+// Fire flicker in two frames, an idle bob: periods that divide a second, as the crabs' do (the 2 s bob is
+// phased from the clock when a walk redraws it each second). Reduced motion stops all of it.
+const TAVERN_CSS = `<style>.fl2{opacity:0}.fl1{animation:fa .5s steps(1) infinite}.fl2{animation:fb .5s steps(1) infinite}
+.idle{animation:ib 2s steps(1) infinite}@keyframes ib{50%{transform:translateY(-1px)}}
+@media (prefers-reduced-motion: reduce){.fl1,.fl2,.idle{animation:none}}</style>`
+
+export type Crew = { out: Record<string, number>; walk: Record<string, number>; tint: Record<string, string> }
+
+// A costume's model before any run of it is seen: the tier it usually runs on.
+const SEAT_MODEL: Record<string, string> = { explore: 'haiku', light: 'haiku', medium: 'sonnet', careful: 'opus', heavy: 'opus', fable: 'fable' }
+
+// The main session's spell of work as of `at`: from its first call after it last went idle (or after a lull of
+// LIVE_MS), to when it went idle or its last call went stale. `until` is absent while it works, as long as the
+// main row is lit. Undefined before its first call.
+// shortcut: keyed on tool calls, as the main row's light is; a turn with no calls never sends the king out.
+export const mainSpan = (workList: readonly WorkItem[], idleAt: number, at: number): { since: number; until?: number } | undefined => {
+  const mine = workList.filter(w => w.who === 'main').map(w => w.at)
+  let i = mine.length - 1
+  const last = mine[i]
+  if (last === undefined) return undefined
+  while (i > 0 && (mine[i - 1] ?? 0) > idleAt && (mine[i] ?? 0) - (mine[i - 1] ?? 0) < LIVE_MS) i--
+  const since = mine[i] ?? last
+  if (last > idleAt && at - last < LIVE_MS) return { since }
+  return { since, until: last > idleAt ? last + LIVE_MS : Math.min(idleAt, last + LIVE_MS) }
+}
+
+// Who is out on a job (running agents by costume, the king while the main session works), where a crab on its
+// way is (0 at its seat, 1 at the door), and each crab's shell colour: its costume's newest run's model, else the
+// costume's usual one; the king's is the main session's. A crab walks out for WALK_MS after its first job
+// started, and back in for WALK_MS after the last one ended.
+export const crewOf = (list: readonly AgentRun[], at: number, main?: { since: number; until?: number }, mainModel = ''): Crew => {
+  const out: Record<string, number> = {}
+  const walk: Record<string, number> = {}
+  const tint: Record<string, string> = {}
+  const place = (c: string, since: number, until?: number) => {
+    if (until === undefined && at - since < WALK_MS) walk[c] = Math.round((Math.max(0, at - since) / WALK_MS) * 100) / 100
+    if (until !== undefined && at - until < WALK_MS) walk[c] = Math.round((1 - Math.max(0, at - until) / WALK_MS) * 100) / 100
+  }
+  const byCostume = new Map<string, AgentRun[]>()
+  for (const a of list) {
+    const c = costumeOf(a)
+    const mine = byCostume.get(c)
+    if (mine) mine.push(a)
+    else byCostume.set(c, [a])
+  }
+  for (const c of SEATS) {
+    const mine = byCostume.get(c) ?? []
+    const newest = mine.reduce<AgentRun | undefined>((a, b) => (a && a.startedAt > b.startedAt ? a : b), undefined)
+    const shell = c === 'king' ? modelTint(mainModel) : (modelTint(newest?.model ?? '') ?? modelTint(SEAT_MODEL[c] ?? ''))
+    if (shell) tint[c] = shell
+    const running = mine.filter(a => a.status === 'running')
+    if (running.length) {
+      out[c] = running.length
+      place(c, Math.min(...running.map(a => a.startedAt)))
+    } else place(c, -Infinity, Math.max(-Infinity, ...mine.map(a => a.endedAt ?? -Infinity)))
+  }
+  if (main) {
+    if (main.until === undefined) out.king = 1
+    place('king', main.since, main.until)
+  }
+  return { out, walk, tint }
+}
+
+// The point `t` of the way from a seat to the door: down or up to the aisle, along it, then up to the door.
+const walkAt = (seat: Spot, t: number): Spot => {
+  const pts = [seat, { x: seat.x, y: AISLE_Y }, { x: DOOR.x, y: AISLE_Y }, DOOR]
+  const legs = pts.slice(1).map((p, i) => Math.abs(p.x - (pts[i]?.x ?? 0)) + Math.abs(p.y - (pts[i]?.y ?? 0)))
+  let rest = t * sum(legs)
+  for (let i = 0; i < legs.length; i++) {
+    const a = pts[i] ?? DOOR
+    const b = pts[i + 1] ?? DOOR
+    const leg = legs[i] ?? 0
+    if (rest <= leg && leg > 0) return { x: Math.round(a.x + ((b.x - a.x) * rest) / leg), y: Math.round(a.y + ((b.y - a.y) * rest) / leg) }
+    rest -= leg
+  }
+  return DOOR
+}
+
+const tavernBg = new Map<string, { L: TavernLayout; under: string; props: { z: number; svg: string }[]; over: string }>()
+const tavernMemo = new Map<string, string>()
+
+// The tavern for `crew`, as one drawing W wide and SCENE_H tall in a thin dark wood frame: crabs at their seats
+// in their model's shell colour, sorted by their feet, a mug where one is out, and a "×N out" tag on the bar
+// for a costume with more than one agent out.
+export const hideoutSvg = (W: number, crew: Crew, at: number): string => {
+  const rtl = isRtl()
+  const isWalking = Object.keys(crew.walk).length > 0
+  const phase = isWalking ? Math.floor(at / 1000) % 2 : 0
+  const key = JSON.stringify([W, rtl, lang, crew, phase])
+  const hit = tavernMemo.get(key)
+  if (hit !== undefined) return hit
+  if (tavernMemo.size > 32) tavernMemo.clear()
+  const bgKey = `${W}|${rtl}`
+  let bg = tavernBg.get(bgKey)
+  if (!bg) {
+    if (tavernBg.size > 32) tavernBg.clear()
+    const L = tavernLayout(W)
+    bg = { L, under: tavernBack(L), props: tavernProps(L), over: tavernOver(L) }
+    tavernBg.set(bgKey, bg)
+  }
+  const { L } = bg
+  const items = [...bg.props]
+  SEATS.forEach((c, i) => {
+    const seat = L.seats[c]
+    if (!seat) return
+    const t = crew.walk[c]
+    const isOut = !!crew.out[c]
+    // The seat stays empty while its crab is away or on its way, an untouched mug where it sat.
+    if (seat.mug && (isOut || t !== undefined)) {
+      const m = seat.mug
+      const p = pixels()
+      p.px(m.x - 2, m.y - 5, 4, 5, WOOD[3])
+      p.px(m.x - 2, m.y - 5, 1, 5, WOOD[4])
+      p.px(m.x + 2, m.y - 4, 1, 3, WOOD[2])
+      p.px(m.x - 2, m.y - 6, 4, 1, '#f2e6c8')
+      items.push({ z: m.z, svg: p.done() })
+    }
+    if (isOut && t === undefined) return
+    const pos = t === undefined ? seat : walkAt(seat, t)
+    // Three fixed scale steps by depth; the sprite is 30 units wide with its feet at unit 26.
+    const scale = pos.y < 84 ? 0.75 : pos.y < 108 ? 0.875 : 1
+    const x0 = Math.round(pos.x - 15 * scale)
+    const y0 = Math.round(pos.y - 26 * scale)
+    const isBusy = t !== undefined
+    // On its way a crab faces where it goes (the door is left of every seat); seated, it faces the hearth.
+    const faceLeft = t !== undefined ? isOut : seat.x > L.hx
+    // The contact shadow, a flat oval 2 px tall; a crab on a stool has the stool's.
+    const p = pixels()
+    if (t !== undefined || !seat.isOnStool) {
+      p.px(pos.x - Math.round(10 * scale), pos.y - 1, Math.round(20 * scale), 2, '#00000040')
+      p.px(pos.x - Math.round(7 * scale), pos.y - 1, Math.round(14 * scale), 2, '#00000040')
+    }
+    const shadow = p.done()
+    // A warm 1 px rim on the side that faces the fire.
+    const isNearFire = t === undefined && Math.abs(pos.x - L.hx) < 70 && pos.y < 104
+    const rim = isNearFire
+      ? `<rect x="${x0 + Math.round((pos.x < L.hx ? 22 : 7) * scale)}" y="${y0 + Math.round(10 * scale)}" width="1" height="${Math.round(12 * scale)}" fill="${WARM}" opacity=".6"/>`
+      : ''
+    const sprite = crab(x0, y0, c, false, isBusy, scale, faceLeft, crew.tint[c]) + rim
+    items.push({
+      z: t === undefined ? seat.z : pos.y,
+      svg: shadow + (isBusy ? sprite : `<g class="idle" style="animation-delay:-${(phase + i * 0.5) % 2}s">${sprite}</g>`),
+    })
+  })
+  items.sort((a, b) => a.z - b.z)
+  // The tags are slates standing on the counter, over the heads of the crabs at the bar. They hold words:
+  // drawn outside the mirror, at the mirrored spot.
+  // shortcut: tags that do not fit along the counter are left off; the head and the alt text still count them.
+  const s = tr()
+  let tx = 43
+  const tags: string[] = []
+  for (const c of SEATS) {
+    const n = crew.out[c] ?? 0
+    if (n < 2) continue
+    const label = `×${n} ${s.out}`
+    const w = Math.round(textWidth(label, 9) + 14)
+    if (tx + w > L.barEnd - 4) break
+    tags.push(`<rect x="${mx(W, tx, w)}" y="46" width="${w}" height="11" fill="#1d140e" stroke="${WOOD[2]}" stroke-width="1"/>
+<rect x="${mx(W, tx + 3, 4)}" y="49" width="4" height="5" fill="${TIER_COLOR[c] ?? '#E2C46A'}"/>
+<text x="${mx(W, tx + 9, w - 11) + (w - 11) / 2}" y="55" text-anchor="middle"${rtl ? ' direction="rtl"' : ''} font-family="${FONT}" font-size="9" font-weight="600" fill="#f2e6c8">${xml(label)}</text>`)
+    tx += w + 3
+  }
+  // The frame is the scene's own: rounded as the cards are, a 1 px line of the darkest wood over the vignette.
+  const out = svg(
+    W,
+    SCENE_H,
+    `${TAVERN_CSS}<defs><clipPath id="tvc"><rect width="${W}" height="${SCENE_H}" rx="8"/></clipPath></defs><g clip-path="url(#tvc)"><g${rtl ? ` transform="matrix(-1 0 0 1 ${W} 0)"` : ''} shape-rendering="crispEdges">${bg.under}${items.map(it => it.svg).join('')}${bg.over}</g>${tags.join('')}</g><rect x=".5" y=".5" width="${W - 1}" height="${SCENE_H - 1}" rx="7.5" fill="none" stroke="${WOOD[0]}" stroke-width="1"/>`,
+  )
+  tavernMemo.set(key, out)
+  return out
+}
+
 // Enabled plugins from settings: { "name@marketplace": true }.
 const enabledPlugins = async ($: EngineInterface): Promise<string[]> => {
   try {
@@ -1524,7 +1923,12 @@ export const register: Register = (on, options) => {
         // The main row is lit by its last call after its last turn ended, until LIVE_MS (and a tick to spare) has passed.
         const lastMain = [...workList].reverse().find(w => w.who === 'main')?.at ?? 0
         const isLit = lastMain > idleAt && at - lastMain < LIVE_MS + 2000
-        if (!isRunning && !isLit) return
+        // A crab walks back into the hideout for WALK_MS after its agent ends, the king after the main session stops:
+        // placed by the clock, so it ticks till then (and one to spare).
+        const mainUntil = mainSpan(workList, idleAt, at)?.until
+        const isWalkingIn =
+          agentList.some(a => a.endedAt !== undefined && at - a.endedAt < WALK_MS + 2000) || (mainUntil !== undefined && at - mainUntil < WALK_MS + 2000)
+        if (!isRunning && !isLit && !isWalkingIn) return
         await update($, now, () => at)
       })()
     })
@@ -1867,7 +2271,8 @@ export const register: Register = (on, options) => {
     const mainStep =
       taskList.find(t => t.status === 'in_progress')?.content ??
       (taskList.length ? (doneCount === taskList.length ? `all ${taskList.length} tasks done` : `${doneCount}/${taskList.length} tasks done`) : '')
-    const isMainWorking = !!mainItem && mainItem.at > idleAt && nowAt - mainItem.at < LIVE_MS
+    const mainWork = mainSpan(workList, idleAt, nowAt)
+    const isMainWorking = !!mainWork && mainWork.until === undefined
     const kitRows = kitRowsOf(kitList, enabledList, idleAt)
     const kitActive = kitRows.filter(k => k.state === 'active').length
     // Only skills in use get a full card; the rest, used earlier or not yet, sit in the chip grid.
@@ -1885,7 +2290,6 @@ export const register: Register = (on, options) => {
     const title = f && !f.isFinished ? f.title : ''
 
     const isEmpty = list.length === 0 && planned.length === 0 && bgList.length === 0 && taskList.length === 0
-    const summary = `≈${fmtCost(t.cost)}, ${fmtTokens(t.tokens)} ${s.tokensWord}, ${fmtTime(t.time)}`
 
     if (e.surface === 'desktop' && 'Svg' in ui) {
       const { Svg } = ui
@@ -2031,11 +2435,15 @@ export const register: Register = (on, options) => {
       // shortcut: assumes a desktop row is ROW_PX px; with no bodyRows the cards take their natural height.
       const bodyRows = e.props.scroll?.bodyRows || 0
       const paneH = bodyRows * ROW_PX
-      const headerH = headerHeight(title)
+      // The flow's name, one row, while a flow runs.
+      const titleH = title ? ROW_PX : 0
+      // The tavern spans the pane at a fixed height: its head row, the scene and a one-row margin,
+      // taken out of what the cards below share.
+      const tavernH = ROW_PX + SCENE_H + ROW_PX
       const crewNat = CARD_CHROME + heightOf(crewItems)
       const kitNat = CARD_CHROME + heightOf(kitItems)
       const row2Nat = isTwoCol ? Math.max(crewNat, kitNat) : crewNat + kitNat
-      const avail = paneH - headerH - 8
+      const avail = paneH - titleH - tavernH - 8
       const fill = paneH > 0 && avail > 200
       const row2H = fill ? avail : row2Nat
       const crewH = !fill ? crewNat : isTwoCol ? row2H : Math.min(crewNat, Math.max(Math.floor(row2H * 0.6), row2H - kitNat))
@@ -2085,18 +2493,37 @@ export const register: Register = (on, options) => {
       const crewCount = runAll.length + planAll.length + doneAll.length
       const left = (
         <Box key="col-crew" flexDirection="column" width={isTwoCol ? '50%' : undefined} flexGrow={fill ? 1 : 0} flexShrink={0} alignItems={align} paddingRight={isTwoCol ? 1 : 0}>
-          {listCard('crew', s.pane, crewCount ? String(crewCount) : '', crewItems, crewH, colW, isRtl() && isTwoCol ? colX : 0, headerH)}
+          {listCard('crew', s.pane, crewCount ? String(crewCount) : '', crewItems, crewH, colW, isRtl() && isTwoCol ? colX : 0, titleH + tavernH)}
         </Box>
       )
       const right = (
         <Box key="col-kit" flexDirection="column" width={isTwoCol ? '50%' : undefined} flexGrow={fill && isTwoCol ? 1 : 0} flexShrink={0} alignItems={align} paddingLeft={isTwoCol ? 1 : 0}>
-          {listCard('kit', s.kit, kitRows.length ? `${kitActive} ${s.active} · ${kitIdle.length} ${s.notActive}` : '', kitItems, kitH, colW, isTwoCol ? (isRtl() ? 0 : colX) : 0, isTwoCol ? headerH : headerH + crewH)}
+          {listCard('kit', s.kit, kitRows.length ? `${kitActive} ${s.active} · ${kitIdle.length} ${s.notActive}` : '', kitItems, kitH, colW, isTwoCol ? (isRtl() ? 0 : colX) : 0, titleH + tavernH + (isTwoCol ? 0 : crewH))}
+        </Box>
+      )
+      // The Hideout: a head with who is home and who is out, over the tavern scene, which spans the pane edge
+      // to edge in its own frame. It never grows: the Agents card below takes the fill.
+      const crew = crewOf(list, at, mainWork, split.model)
+      const outN = sum(Object.values(crew.out))
+      const homeN = SEATS.length - Object.keys(crew.out).length
+      const who = (c: string) => (c === 'king' ? s.mainSession : tierWord(c))
+      const tavernAlt = [
+        `${s.hideout} · ${s.home}: ${SEATS.filter(c => !crew.out[c]).map(who).join(', ')}`,
+        ...(outN ? [`${s.out}: ${SEATS.filter(c => crew.out[c]).map(c => `${who(c)} ×${crew.out[c]}`).join(', ')}`] : []),
+      ].join(' · ')
+      const tavern = (
+        <Box key="card-tavern" flexDirection="column" flexShrink={0} alignItems={align} marginBottom={1}>
+          <Box key="tavern-head" flexDirection="row" gap={2} paddingX={1}>
+            <Text bold>{s.hideout}</Text>
+            <Text dimColor>{`${homeN} ${s.home} · ${outN} ${s.out}`}</Text>
+          </Box>
+          <Svg key="tavern" source={hideoutSvg(W, crew, at)} alt={tavernAlt} width={W} height={SCENE_H} />
         </Box>
       )
 
       cardRects = rects
       // Every row sits in the absolute overlay, so all of them must size the grid or they are clipped.
-      const contentH = headerH + row2H + 8
+      const contentH = titleH + tavernH + row2H + 8
       // A pane with a card to scroll is parked (see paneParked): two rows of slack, the content one row down.
       // With nothing to scroll it fits its window exactly, so the desktop shows no scrollbar.
       paneParked = fill && rects.some(r => r.max > 0)
@@ -2112,43 +2539,21 @@ export const register: Register = (on, options) => {
           ))}
           {/* Filling, the overlay spans the window's rows (parked: rows 1 to bodyRows), so row 2 can stretch. */}
           <Box flexDirection="column" position="absolute" top={paneParked ? 1 : 0} bottom={fill ? (paneParked ? 1 : 0) : undefined} left={0} right={0} alignItems={align}>
-            {/* Row 1: cost, tokens and time. */}
-            <Svg source={headerSvg(W, title, t)} alt={title ? `${title}: ${summary}` : summary} width={W} height={headerH} />
+            {/* The flow's name, while a flow runs. */}
+            {title ? (
+              <Box key="title" paddingX={1}>
+                <Text bold wrap="truncate-end">
+                  {title}
+                </Text>
+              </Box>
+            ) : null}
+            {/* The Hideout, full width even in two columns. */}
+            {tavern}
             {/* Row 2: the crew beside the skills and plugins. */}
             <Box flexDirection={isTwoCol ? (isRtl() ? 'row-reverse' : 'row') : 'column'} flexGrow={fill ? 1 : 0}>
               {left}
               {right}
             </Box>
-            {/* Tooltips last, so they paint over the cards. A keyed Box over each tile is the hover
-                scope; its card shows on hover. An image, not an interactive SVG frame: a frame
-                reloads, and flickers, on every redraw. */}
-            {[costTip(t.cost, usage?.cost?.usd, split, list), tokensTip(t.tokens, split, list)].map((tip, i) => {
-              const tile = tileBox(W, title, i)
-              const cardW = Math.min(52, tile.cols)
-              return (
-                <Box key={`tip-${i}`} position="absolute" top={tile.top} left={tile.left} width={tile.width} height={tile.height}>
-                  <Box
-                    position="absolute"
-                    top={tile.height}
-                    left={Math.min(0, tile.cols - tile.left - cardW)}
-                    width={cardW}
-                    display="none"
-                    hover={{ display: 'flex' }}
-                    flexDirection="column"
-                    borderStyle="round"
-                    borderColor={EDGE}
-                    backgroundColor="inverseText"
-                    paddingX={1}
-                  >
-                    {tip.split('\n').map((line, j) => (
-                      <Text key={`tip-${i}-${j}`} dimColor={j > 0} bold={j === 0}>
-                        {line || ' '}
-                      </Text>
-                    ))}
-                  </Box>
-                </Box>
-              )
-            })}
           </Box>
         </Box>
       )

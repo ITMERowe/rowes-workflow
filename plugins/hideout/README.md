@@ -4,7 +4,8 @@ Your crew's hideout in Claude Code. A plugin with two parts: a band above the pr
 
 - **The band:** one card above the prompt. It shows the plan's title, tasks done out of planned and the percent, plus the usage left in your 7-day and 5-hour windows with their reset times. It replaces ribbon's and ponytail's own rows, so nothing shows twice. A button with the agent count opens the panel.
 - **The crew panel** (`/agents-info` toggles it; `/agents-info open` opens it without toggling):
-  - Session totals: cost, tokens and time. Hover over cost or tokens to see where they came from.
+  - Session totals in the terminal: cost, tokens and time.
+  - The Hideout, on desktop: a pixel tavern at night at the top of the panel. Each crab has its seat, and walks out of the door while an agent in its costume is on a job; the Tactician leaves while the main session works. Each crab's shell shows the model of its costume's latest run.
   - Every worker: the main session, running, finished and planned subagents, the task list and background tasks, each with its model, effort, progress, context and cost. Click a row's `▸ N` to list its tool calls.
   - The skills and plugins in use.
 - **The crab crew:** each crab wears a class costume and acts it out in pixel animation while it works:
@@ -87,7 +88,7 @@ claude plugin test .
 Hideout began as a fork of [savvy-progress](https://github.com/JohnnyVizz/claude-kit/tree/main/plugins/savvy-progress) by [johnnyvizz](https://github.com/JohnnyVizz) (MIT). It was renamed and reworked from there:
 
 - The usage row and the merged band.
-- The two-row panel with hover breakdowns and tool-call lists.
+- The two-row panel with tool-call lists.
 - The crab crew.
 
 It still shows the [savvy-flow](https://github.com/JohnnyVizz/claude-kit/tree/main/plugins/savvy-flow) planner's workers.

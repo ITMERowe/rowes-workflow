@@ -2,7 +2,7 @@ import type { On } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { Split } from '../types'
-import { addRequest, costTip, tokensTip, totals } from './register'
+import { addRequest, totals } from './register'
 
 const PLUGIN = 'hideout'
 const pane = { title: '', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} } as const
@@ -118,19 +118,10 @@ test('a new flow clears finished rows, not their tokens from the header', async 
   expect(await ui.find({ type: 'Text', text: /≈\$0\.1[78] · 130k tokens/ })).toBeTruthy()
 })
 
-test('tooltips: main session split by token kind, then subagents', () => {
+test('a request adds to its split by token kind', () => {
   const none = { requests: 0, tokens: [0, 0, 0, 0], usd: [0, 0, 0, 0] } as const
   // Sonnet 5.5: input 2, output 10, cache read 0.1, cache write 4 USD per million.
   const s = addRequest({ ...none, tokens: [...none.tokens], usd: [...none.usd] }, 'claude-sonnet-5-5', { input_tokens: 0, output_tokens: 1000, cache_read_input_tokens: 1_000_000, cache_creation_input_tokens: 0 })
   expect(s.requests).toBe(1)
   expect(Math.round((s.usd[2] ?? 0) * 1000)).toBe(100)
-  const a = { id: 't1', agentId: 'a1', type: 'editor', description: 'Fix bug', model: 'claude-haiku-5-5', status: 'done' as const, startedAt: 0, contextTokens: 0, contextMax: 1, tokens: 5000, costUsd: 0.02, steps: 1, round: 1 }
-  const cost = costTip(0.13, 0.12, s, [a])
-  expect(cost).toContain('cache reads: 1.0M · ≈$0.10')
-  expect(cost).toContain('Fix bug · Haiku 5.5: ≈$0.02')
-  expect(cost).toContain('$0.12')
-  // Sorted by tokens: cache reads first, output after.
-  const tokens = tokensTip(1_006_000, s, [a])
-  expect(tokens.indexOf('cache reads')).toBeLessThan(tokens.indexOf('output'))
-  expect(tokens).toContain('1 requests')
 })

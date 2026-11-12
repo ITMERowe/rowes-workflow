@@ -46,7 +46,8 @@ Each plugin works on its own, so you can install just one. To install from a ter
 ## Hideout: your crew, live
 
 - **The band** above the prompt shows plan progress and the usage left in your 5-hour and 7-day windows.
-- **The crew panel** (`/agents-info`) shows every agent with its model, cost and tokens. Hover over a figure to see where it came from, and click a row to see its tool calls.
+- **The tavern** tops the crew panel (`/agents-info`): a 2.5D pixel tavern where your crew hangs out by the fire. A crab walks out the door while its kind of agent is on a job and comes back when the job is done.
+- **The crew panel** lists every agent with its model, progress and context. Click a row to see its tool calls.
 - **Pixel crabs** act out each job. The Pathfinder searches, the Martial Artist edits, the Stormweaver reviews, and the Tactician plans the main session. The shell colour shows the model: Haiku grey, Sonnet blue, Opus yellow, Fable orange.
 
 [More about Hideout →](plugins/hideout/README.md)
