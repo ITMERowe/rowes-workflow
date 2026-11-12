@@ -26,7 +26,7 @@ Where the work stands, for the next session. Last updated 2026-11-12.
   - RTL
   - untrusted tool input
   - the per-render cost, plus one type scale, one colour and grey token set, and alt text
-- **The tavern card (not committed yet):** a 2.5D pixel tavern at the top of the desktop panel, which replaces the COST / TOKENS / TIME tiles.
+- **The tavern card (commit ce51d87):** a 2.5D pixel tavern at the top of the desktop panel, which replaces the COST / TOKENS / TIME tiles.
   - The 8 crabs sit at fixed seats, tinted by the model of each costume's latest run.
   - A crab walks out the door while its agent runs. The Tactician walks out while the main session makes tool calls.
   - The scene draws its own wood frame, and the card can't be folded.
@@ -36,7 +36,7 @@ Where the work stands, for the next session. Last updated 2026-11-12.
 
 ## Open
 
-1. **Check the tavern in the real desktop panel, then commit.** Look at:
+1. **Check the tavern in the real desktop panel.** Look at:
    - whether the frame corners match the other cards;
    - whether the scene and the cards are the same width;
    - whether the wheel scroll still lands on the right card now the header is gone;
