@@ -29,10 +29,12 @@ test('desktop: a task row with tool calls lists them when its toggle is pressed'
   expect((await toggle())?.props.label).toBe('1 tool call')
   expect(String((await toggle())?.children)).toBe('▸ 1')
   expect(await ui.find({ key: 'calls-task-1' })).toBeFalsy()
-  expect(await ui.find({ type: 'Text', text: /hooks\/register\.tsx/ })).toBeFalsy()
+  // Call lines are one-line drawings; their alt text names the call.
+  const callShown = async () => (await ui.findAll({ type: 'Svg' })).some(el => /hooks\/register\.tsx/.test(String(el.props.alt)))
+  expect(await callShown()).toBe(false)
   await ui.press({ key: 'calls-task-0' })
   expect(String((await toggle())?.children)).toBe('▾ 1')
-  expect(await ui.find({ type: 'Text', text: /hooks\/register\.tsx/ })).toBeTruthy()
+  expect(await callShown()).toBe(true)
 })
 
 test('desktop: no drawing runs in an interactive frame', async ($, on) => {

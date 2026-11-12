@@ -57,10 +57,9 @@ const scrollCard = ($: EngineInterface, key: string, d: number, max: number) =>
 // The card under a wheel tick, from the pointer's cell. shortcut: a desktop column is taken as 8 px, as W assumes.
 // shortcut: a desktop row is the code font's line height, about 20 px measured; read it from the surface if one ever reports it.
 export const ROW_PX = 20
-// The desktop sends the wheel only while the pane has rows to scroll: a parked pane is two rows taller than its window,
-// the window held on row 1, and every tick scrolls the card under the pointer instead.
-let paneParked = false
-let paneRow = 0
+// While the cards fill the pane it fits its window exactly, so the pane never scrolls: the engine still raises
+// ui.scroll at the edges, and every tick scrolls the card under the pointer instead.
+let paneFilled = false
 export const cardAt = (rects: readonly CardRect[], column: number, row: number): CardRect | undefined => {
   const x = column * 8
   const y = row * ROW_PX
@@ -980,8 +979,9 @@ type RowSpec = {
   status: string
   dim?: boolean
 }
-// Room on the title line for the row's call-list toggle, laid over the drawing.
-const TOGGLE_W = 56
+// Room on the title line for the row's call-list toggle, laid over the drawing: the desktop draws its label
+// ("999 tool calls", about 96 px) 3 columns in from the right, clear of the status mark.
+const TOGGLE_W = 120
 const workRowSvg = (W: number, r: RowSpec, hasToggle = false): string => {
   const textW = W - 42 - 22 - (hasToggle ? TOGGLE_W : 0)
   const barW = W - 42
@@ -1002,6 +1002,17 @@ ${statusMark(mx(W, W - 10), 14, r.status, r.color)}
 <line class="ln" x1="0" y1="${ROW_H - 0.5}" x2="${W}" y2="${ROW_H - 0.5}"/>`,
   )
 }
+// One tool call under its row, one line always: its kind's glyph under the row's title, the label cut to fit,
+// a faint guide on the left tying the list to its row. A drawing, so its height is exact and the card scrolls true.
+const CALL_H = 18
+const callSvg = (W: number, glyph: string, color: string, label: string): string =>
+  svg(
+    W,
+    CALL_H,
+    `<line class="ln" x1="${mx(W, 20)}" y1="0" x2="${mx(W, 20)}" y2="${CALL_H}"/>
+<text ${startText(W, 42, 13, false)} font-family="${FONT}" font-size="11" fill="${color}">${xml(glyph)}</text>
+<text class="s" ${startText(W, 56, 13)} font-family="${FONT}" font-size="11">${xml(fitText(label.replace(/\s+/g, ' ').trim(), 11, W - 56 - 8))}</text>`,
+  )
 const ROW_CRAB_Y = 10
 
 const agentSvg = (W: number, a: AgentRun, at: number, hasToggle = false): string => {
@@ -1547,12 +1558,15 @@ const tavernOver = (L: TavernLayout): string =>
   `<ellipse cx="${L.hx}" cy="60" rx="${Math.round(Math.min(160, L.W * 0.3))}" ry="70" fill="url(#tg)" opacity=".45"/><rect width="${L.W}" height="${SCENE_H}" fill="url(#tv)"/>`
 
 // Fire flicker in two frames, an idle bob: periods that divide a second, as the crabs' do (the 2 s bob is
-// phased from the clock when a walk redraws it each second). Reduced motion stops all of it.
+// staggered by seat; the drawing stays the same text while only the clock moves). Reduced motion stops all of it.
 const TAVERN_CSS = `<style>.fl2{opacity:0}.fl1{animation:fa .5s steps(1) infinite}.fl2{animation:fb .5s steps(1) infinite}
 .idle{animation:ib 2s steps(1) infinite}@keyframes ib{50%{transform:translateY(-1px)}}
-@media (prefers-reduced-motion: reduce){.fl1,.fl2,.idle{animation:none}}</style>`
+.hop{animation:ib .4s steps(1) infinite}
+@media (prefers-reduced-motion: reduce){.fl1,.fl2,.idle,.hop,[style*="animation:wk-"]{animation:none!important}}</style>`
 
-export type Crew = { out: Record<string, number>; walk: Record<string, number>; tint: Record<string, string> }
+// A walk under way: from and to as fractions of the way to the door, started at `start` (ms).
+type Go = { from: number; to: number; start: number }
+export type Crew = { out: Record<string, number>; walk: Record<string, number>; go: Record<string, Go>; tint: Record<string, string> }
 
 // A costume's model before any run of it is seen: the tier it usually runs on.
 const SEAT_MODEL: Record<string, string> = { explore: 'haiku', light: 'haiku', medium: 'sonnet', careful: 'opus', heavy: 'opus', fable: 'fable' }
@@ -1575,14 +1589,26 @@ export const mainSpan = (workList: readonly WorkItem[], idleAt: number, at: numb
 // Who is out on a job (running agents by costume, the king while the main session works), where a crab on its
 // way is (0 at its seat, 1 at the door), and each crab's shell colour: its costume's newest run's model, else the
 // costume's usual one; the king's is the main session's. A crab walks out for WALK_MS after its first job
-// started, and back in for WALK_MS after the last one ended.
+// started, and back in from as far as it got after the last one ended: a short job turns it round mid-walk.
 export const crewOf = (list: readonly AgentRun[], at: number, main?: { since: number; until?: number }, mainModel = ''): Crew => {
   const out: Record<string, number> = {}
   const walk: Record<string, number> = {}
+  const go: Record<string, Go> = {}
   const tint: Record<string, string> = {}
   const place = (c: string, since: number, until?: number) => {
-    if (until === undefined && at - since < WALK_MS) walk[c] = Math.round((Math.max(0, at - since) / WALK_MS) * 100) / 100
-    if (until !== undefined && at - until < WALK_MS) walk[c] = Math.round((1 - Math.max(0, at - until) / WALK_MS) * 100) / 100
+    if (until === undefined) {
+      if (at - since >= WALK_MS) return
+      go[c] = { from: 0, to: 1, start: since }
+      walk[c] = Math.round((Math.max(0, at - since) / WALK_MS) * 100) / 100
+      return
+    }
+    // No job ever ended: home all along.
+    if (!Number.isFinite(until)) return
+    const reached = Math.min(1, Math.max(0, (until - since) / WALK_MS))
+    const left = reached - Math.max(0, at - until) / WALK_MS
+    if (left <= 0) return
+    go[c] = { from: reached, to: 0, start: until }
+    walk[c] = Math.round(left * 100) / 100
   }
   const byCostume = new Map<string, AgentRun[]>()
   for (const a of list) {
@@ -1600,18 +1626,51 @@ export const crewOf = (list: readonly AgentRun[], at: number, main?: { since: nu
     if (running.length) {
       out[c] = running.length
       place(c, Math.min(...running.map(a => a.startedAt)))
-    } else place(c, -Infinity, Math.max(-Infinity, ...mine.map(a => a.endedAt ?? -Infinity)))
+    } else {
+      // The crab left with the first of the runs that kept it out up to the last one's end.
+      const last = mine.reduce<AgentRun | undefined>((a, b) => ((b.endedAt ?? -Infinity) > (a?.endedAt ?? -Infinity) ? b : a), undefined)
+      let since = last?.startedAt ?? -Infinity
+      for (const r of [...mine].sort((a, b) => b.startedAt - a.startedAt)) if (r.startedAt < since && (r.endedAt ?? Infinity) >= since) since = r.startedAt
+      place(c, since, last?.endedAt ?? -Infinity)
+    }
   }
   if (main) {
     if (main.until === undefined) out.king = 1
     place('king', main.since, main.until)
   }
-  return { out, walk, tint }
+  return { out, walk, go, tint }
 }
 
-// The point `t` of the way from a seat to the door: down or up to the aisle, along it, then up to the door.
+// The way from a seat to the door: down or up to the aisle, along it, then up to the door.
+const walkPath = (seat: Spot): Spot[] => [seat, { x: seat.x, y: AISLE_Y }, { x: DOOR.x, y: AISLE_Y }, DOOR]
+// A crab's size by depth: smaller toward the back wall.
+const depthScale = (y: number) => (y < 84 ? 0.75 : y < 108 ? 0.875 : 1)
+
+// Past this much of the way the crab is in the doorway and fades out.
+const FADE_AT = 0.88
+// The walk from `from` to `to` (fractions of the way to the door, either direction) as CSS keyframes on a group
+// whose origin is the crab's feet: it glides, shrinks toward the door, and fades through it.
+export const walkKeyframes = (name: string, seat: Spot, from = 0, to = 1): string => {
+  const pts = walkPath(seat)
+  const legs = pts.slice(1).map((p, i) => Math.abs(p.x - (pts[i]?.x ?? 0)) + Math.abs(p.y - (pts[i]?.y ?? 0)))
+  const total = sum(legs) || 1
+  let done = 0
+  const stops = [from, to, FADE_AT, ...pts.map((_, i) => (i > 0 ? (done += legs[i - 1] ?? 0) : 0) / total)]
+  const [lo, hi] = from < to ? [from, to] : [to, from]
+  const span = hi - lo || 1
+  const frames = [...new Set(stops.filter(p => p >= lo && p <= hi))]
+    .sort((a, b) => (from < to ? a - b : b - a))
+    .map(p => {
+      const q = walkAt(seat, p)
+      const op = p >= 1 ? 0 : p > FADE_AT ? Math.round(((1 - p) / (1 - FADE_AT)) * 100) / 100 : 1
+      return `${Math.round((Math.abs(p - from) / span) * 1000) / 10}%{transform:translate(${q.x}px,${q.y}px) scale(${depthScale(q.y)});opacity:${op}}`
+    })
+  return `@keyframes ${name}{${frames.join('')}}`
+}
+
+// The point `t` of the way from a seat to the door, for a still drawing (reduced motion).
 const walkAt = (seat: Spot, t: number): Spot => {
-  const pts = [seat, { x: seat.x, y: AISLE_Y }, { x: DOOR.x, y: AISLE_Y }, DOOR]
+  const pts = walkPath(seat)
   const legs = pts.slice(1).map((p, i) => Math.abs(p.x - (pts[i]?.x ?? 0)) + Math.abs(p.y - (pts[i]?.y ?? 0)))
   let rest = t * sum(legs)
   for (let i = 0; i < legs.length; i++) {
@@ -1632,9 +1691,9 @@ const tavernMemo = new Map<string, string>()
 // for a costume with more than one agent out.
 export const hideoutSvg = (W: number, crew: Crew, at: number): string => {
   const rtl = isRtl()
-  const isWalking = Object.keys(crew.walk).length > 0
-  const phase = isWalking ? Math.floor(at / 1000) % 2 : 0
-  const key = JSON.stringify([W, rtl, lang, crew, phase])
+  // Keyed without the clock: while only time passes the drawing stays the same text, so the surface keeps it
+  // and its walks run on unbroken. A changed drawing restarts them, each placed from `at` by a negative delay.
+  const key = JSON.stringify([W, rtl, lang, crew.out, crew.go, crew.tint])
   const hit = tavernMemo.get(key)
   if (hit !== undefined) return hit
   if (tavernMemo.size > 32) tavernMemo.clear()
@@ -1651,7 +1710,9 @@ export const hideoutSvg = (W: number, crew: Crew, at: number): string => {
   SEATS.forEach((c, i) => {
     const seat = L.seats[c]
     if (!seat) return
-    const t = crew.walk[c]
+    const g = crew.go[c]
+    // How far it is now along its walk, 0 at the seat, 1 at the door.
+    const t = g && Math.max(0, Math.min(1, g.from + Math.sign(g.to - g.from) * (Math.max(0, at - g.start) / WALK_MS)))
     const isOut = !!crew.out[c]
     // The seat stays empty while its crab is away or on its way, an untouched mug where it sat.
     if (seat.mug && (isOut || t !== undefined)) {
@@ -1666,12 +1727,12 @@ export const hideoutSvg = (W: number, crew: Crew, at: number): string => {
     if (isOut && t === undefined) return
     const pos = t === undefined ? seat : walkAt(seat, t)
     // Three fixed scale steps by depth; the sprite is 30 units wide with its feet at unit 26.
-    const scale = pos.y < 84 ? 0.75 : pos.y < 108 ? 0.875 : 1
+    const scale = depthScale(pos.y)
     const x0 = Math.round(pos.x - 15 * scale)
     const y0 = Math.round(pos.y - 26 * scale)
     const isBusy = t !== undefined
     // On its way a crab faces where it goes (the door is left of every seat); seated, it faces the hearth.
-    const faceLeft = t !== undefined ? isOut : seat.x > L.hx
+    const faceLeft = g ? g.to > g.from : seat.x > L.hx
     // The contact shadow, a flat oval 2 px tall; a crab on a stool has the stool's.
     const p = pixels()
     if (t !== undefined || !seat.isOnStool) {
@@ -1685,9 +1746,28 @@ export const hideoutSvg = (W: number, crew: Crew, at: number): string => {
       ? `<rect x="${x0 + Math.round((pos.x < L.hx ? 22 : 7) * scale)}" y="${y0 + Math.round(10 * scale)}" width="1" height="${Math.round(12 * scale)}" fill="${WARM}" opacity=".6"/>`
       : ''
     const sprite = crab(x0, y0, c, false, isBusy, scale, faceLeft, crew.tint[c]) + rim
+    if (g && t !== undefined) {
+      // Walking: drawn with its feet at the origin and moved by the keyframes from where its walk began, the time
+      // already walked skipped by a negative delay. The still transform is where it is now, for reduced motion.
+      // On the aisle, in front of the crabs at the bar and behind the front tables.
+      const name = `wk-${c}`
+      const dur = Math.round(Math.abs(g.to - g.from) * WALK_MS)
+      const elapsed = Math.min(dur, Math.max(0, Math.round(at - g.start)))
+      const foot = pixels()
+      foot.px(-10, -1, 20, 2, '#00000040')
+      foot.px(-7, -1, 14, 2, '#00000040')
+      items.push({
+        z: AISLE_Y,
+        svg:
+          `<style>${walkKeyframes(name, seat, g.from, g.to)}</style>` +
+          `<g transform="translate(${pos.x} ${pos.y}) scale(${scale})" style="animation:${name} ${dur}ms linear -${elapsed}ms 1 normal both">` +
+          `${foot.done()}<g class="hop">${crab(-15, -26, c, false, true, 1, faceLeft, crew.tint[c])}</g></g>`,
+      })
+      return
+    }
     items.push({
       z: t === undefined ? seat.z : pos.y,
-      svg: shadow + (isBusy ? sprite : `<g class="idle" style="animation-delay:-${(phase + i * 0.5) % 2}s">${sprite}</g>`),
+      svg: shadow + (isBusy ? sprite : `<g class="idle" style="animation-delay:-${(i * 0.5) % 2}s">${sprite}</g>`),
     })
   })
   items.sort((a, b) => a.z - b.z)
@@ -1708,11 +1788,12 @@ export const hideoutSvg = (W: number, crew: Crew, at: number): string => {
 <text x="${mx(W, tx + 9, w - 11) + (w - 11) / 2}" y="55" text-anchor="middle"${rtl ? ' direction="rtl"' : ''} font-family="${FONT}" font-size="9" font-weight="600" fill="#f2e6c8">${xml(label)}</text>`)
     tx += w + 3
   }
-  // The frame is the scene's own: rounded as the cards are, a 1 px line of the darkest wood over the vignette.
+  // The frame is the scene's own: rounded as the cards' borders are (measured about 12 px), a 1 px line of
+  // the darkest wood over the vignette.
   const out = svg(
     W,
     SCENE_H,
-    `${TAVERN_CSS}<defs><clipPath id="tvc"><rect width="${W}" height="${SCENE_H}" rx="8"/></clipPath></defs><g clip-path="url(#tvc)"><g${rtl ? ` transform="matrix(-1 0 0 1 ${W} 0)"` : ''} shape-rendering="crispEdges">${bg.under}${items.map(it => it.svg).join('')}${bg.over}</g>${tags.join('')}</g><rect x=".5" y=".5" width="${W - 1}" height="${SCENE_H - 1}" rx="7.5" fill="none" stroke="${WOOD[0]}" stroke-width="1"/>`,
+    `${TAVERN_CSS}<defs><clipPath id="tvc"><rect width="${W}" height="${SCENE_H}" rx="12"/></clipPath></defs><g clip-path="url(#tvc)"><g${rtl ? ` transform="matrix(-1 0 0 1 ${W} 0)"` : ''} shape-rendering="crispEdges">${bg.under}${items.map(it => it.svg).join('')}${bg.over}</g>${tags.join('')}</g><rect x=".5" y=".5" width="${W - 1}" height="${SCENE_H - 1}" rx="11.5" fill="none" stroke="${WOOD[0]}" stroke-width="1"/>`,
   )
   tavernMemo.set(key, out)
   return out
@@ -2234,15 +2315,13 @@ export const register: Register = (on, options) => {
 
   // The wheel over a card scrolls that card, not the pane: the pane is sized to fit.
   on('ui.scroll', { requestId: PANE }, async ($, e, next) => {
-    if (!paneParked) return next(e)
-    // The window's top row is paneRow; the cards start one row down, under the slack row.
+    if (!paneFilled) return next(e)
+    // The window never moves, so the pointer's row is the pane's row.
     // The scroll keys carry no pointer: they scroll the first card that can.
-    const r = e.origin.kind !== 'person' ? undefined : e.pointer ? cardAt(cardRects, e.pointer.column, e.pointer.row + paneRow - 1) : cardRects.find(c => c.max > 0)
+    const r = e.origin.kind !== 'person' ? undefined : e.pointer ? cardAt(cardRects, e.pointer.column, e.pointer.row) : cardRects.find(c => c.max > 0)
     if (r && r.max > 0) await scrollCard($, r.key, Math.sign(e.by) * Math.max(1, Math.abs(e.by)) * r.step, r.max)
-    // Park the window on row 1, so the next tick, up or down, has a row to scroll and reaches this hook.
-    const res = await next({ ...e, offset: 1 })
-    if (!res.deny) paneRow = 1
-    return res
+    // No next: the pane's window stays put.
+    return {}
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
@@ -2340,23 +2419,17 @@ export const register: Register = (on, options) => {
         if (!calls.length) return { key, node: art, extra: [] }
         const open = isOpen(key)
         const shown = calls.slice(-CALLS_SHOWN)
-        // Call lines sit about 5 columns in, under the row's title.
         const callLine = (w: WorkItem, i: number): Item => ({
           key: `${key}-c${i}`,
-          h: ROW_PX,
-          node: () => (
-            <Text key={`${key}-c${i}`} wrap="truncate-end">
-              <Text color={KIND[w.kind][1]}>{`     ${KIND[w.kind][0]} `}</Text>
-              <Text dimColor>{w.label}</Text>
-            </Text>
-          ),
+          h: CALL_H,
+          node: () => <Svg key={`${key}-c${i}`} source={callSvg(colW, KIND[w.kind][0], KIND[w.kind][1], w.label)} alt={`${KIND[w.kind][2]}: ${w.label}`} width={colW} height={CALL_H} />,
         })
         return {
           key,
           node: () => (
             <Box key={`${key}-box`} flexDirection="column">
               {art()}
-              <Box key={`${key}-tog`} position="absolute" top={0} left={isRtl() ? 2 : undefined} right={isRtl() ? undefined : 2}>
+              <Box key={`${key}-tog`} position="absolute" top={0} left={isRtl() ? 3 : undefined} right={isRtl() ? undefined : 3}>
                 {/* The label names the control; the glyph and count are what it draws. */}
                 <Button key={`calls-${key}`} label={`${calls.length} ${calls.length === 1 ? 'tool call' : 'tool calls'}`} plain dimColor onPress={() => toggleRow(key)}>
                   {`${open ? '▾' : isRtl() ? '◂' : '▸'} ${calls.length}`}
@@ -2368,7 +2441,15 @@ export const register: Register = (on, options) => {
             ? []
             : [
                 ...(calls.length > shown.length
-                  ? [{ key: `${key}-more`, h: ROW_PX, node: () => <Text key={`${key}-more`} dimColor>{`     +${calls.length - shown.length} ${s.more}`}</Text> }]
+                  ? [
+                      {
+                        key: `${key}-more`,
+                        h: CALL_H,
+                        node: () => (
+                          <Svg key={`${key}-more`} source={callSvg(colW, '+', '#9a9a96', `${calls.length - shown.length} ${s.more}`)} alt={`+${calls.length - shown.length} ${s.more}`} width={colW} height={CALL_H} />
+                        ),
+                      },
+                    ]
                   : []),
                 ...shown.map(callLine),
               ],
@@ -2437,9 +2518,9 @@ export const register: Register = (on, options) => {
       const paneH = bodyRows * ROW_PX
       // The flow's name, one row, while a flow runs.
       const titleH = title ? ROW_PX : 0
-      // The tavern spans the pane at a fixed height: its head row, the scene and a one-row margin,
+      // The tavern spans the pane at a fixed height: the scene and a one-row margin,
       // taken out of what the cards below share.
-      const tavernH = ROW_PX + SCENE_H + ROW_PX
+      const tavernH = SCENE_H + ROW_PX
       const crewNat = CARD_CHROME + heightOf(crewItems)
       const kitNat = CARD_CHROME + heightOf(kitItems)
       const row2Nat = isTwoCol ? Math.max(crewNat, kitNat) : crewNat + kitNat
@@ -2475,7 +2556,7 @@ export const register: Register = (on, options) => {
         }
         rects.push({ key: k, x, y, w: w + CARD_IN, h: H, max, step: 1 })
         return (
-          <Box key={`card-${k}`} flexDirection="column" flexGrow={fill ? 1 : 0} overflow="hidden" borderStyle="round" borderColor={EDGE} paddingX={1} marginBottom={k === "crew" && !isTwoCol ? 1 : 0}>
+          <Box key={`card-${k}`} flexDirection="column" flexGrow={fill ? 1 : 0} height={fill ? 0 : undefined} overflow="hidden" borderStyle="round" borderColor={EDGE} paddingX={1} marginBottom={k === "crew" && !isTwoCol ? 1 : 0}>
             {spacer(`${k}-top`, w, CARD_PAD)}
             <Box key={`card-${k}-head`} flexDirection="row" gap={2} alignItems="center">
               <Text bold>{head}</Text>
@@ -2492,20 +2573,19 @@ export const register: Register = (on, options) => {
       // A card's count is the sum of its sections; a card with none shows no count.
       const crewCount = runAll.length + planAll.length + doneAll.length
       const left = (
-        <Box key="col-crew" flexDirection="column" width={isTwoCol ? '50%' : undefined} flexGrow={fill ? 1 : 0} flexShrink={0} alignItems={align} paddingRight={isTwoCol ? 1 : 0}>
+        <Box key="col-crew" flexDirection="column" width={isTwoCol ? '50%' : undefined} flexGrow={fill ? (isTwoCol ? 1 : crewH) : 0} height={fill && !isTwoCol ? 0 : undefined} overflow={fill ? 'hidden' : undefined} flexShrink={0} alignItems={align} paddingRight={isTwoCol ? 1 : 0}>
           {listCard('crew', s.pane, crewCount ? String(crewCount) : '', crewItems, crewH, colW, isRtl() && isTwoCol ? colX : 0, titleH + tavernH)}
         </Box>
       )
       const right = (
-        <Box key="col-kit" flexDirection="column" width={isTwoCol ? '50%' : undefined} flexGrow={fill && isTwoCol ? 1 : 0} flexShrink={0} alignItems={align} paddingLeft={isTwoCol ? 1 : 0}>
+        <Box key="col-kit" flexDirection="column" width={isTwoCol ? '50%' : undefined} flexGrow={fill ? (isTwoCol ? 1 : kitH) : 0} height={fill && !isTwoCol ? 0 : undefined} overflow={fill ? 'hidden' : undefined} flexShrink={0} alignItems={align} paddingLeft={isTwoCol ? 1 : 0}>
           {listCard('kit', s.kit, kitRows.length ? `${kitActive} ${s.active} · ${kitIdle.length} ${s.notActive}` : '', kitItems, kitH, colW, isTwoCol ? (isRtl() ? 0 : colX) : 0, titleH + tavernH + (isTwoCol ? 0 : crewH))}
         </Box>
       )
-      // The Hideout: a head with who is home and who is out, over the tavern scene, which spans the pane edge
+      // The Hideout: the tavern scene, who is home and who is out in its alt text; it spans the pane edge
       // to edge in its own frame. It never grows: the Agents card below takes the fill.
       const crew = crewOf(list, at, mainWork, split.model)
       const outN = sum(Object.values(crew.out))
-      const homeN = SEATS.length - Object.keys(crew.out).length
       const who = (c: string) => (c === 'king' ? s.mainSession : tierWord(c))
       const tavernAlt = [
         `${s.hideout} · ${s.home}: ${SEATS.filter(c => !crew.out[c]).map(who).join(', ')}`,
@@ -2513,10 +2593,6 @@ export const register: Register = (on, options) => {
       ].join(' · ')
       const tavern = (
         <Box key="card-tavern" flexDirection="column" flexShrink={0} alignItems={align} marginBottom={1}>
-          <Box key="tavern-head" flexDirection="row" gap={2} paddingX={1}>
-            <Text bold>{s.hideout}</Text>
-            <Text dimColor>{`${homeN} ${s.home} · ${outN} ${s.out}`}</Text>
-          </Box>
           <Svg key="tavern" source={hideoutSvg(W, crew, at)} alt={tavernAlt} width={W} height={SCENE_H} />
         </Box>
       )
@@ -2524,21 +2600,19 @@ export const register: Register = (on, options) => {
       cardRects = rects
       // Every row sits in the absolute overlay, so all of them must size the grid or they are clipped.
       const contentH = titleH + tavernH + row2H + 8
-      // A pane with a card to scroll is parked (see paneParked): two rows of slack, the content one row down.
-      // With nothing to scroll it fits its window exactly, so the desktop shows no scrollbar.
-      paneParked = fill && rects.some(r => r.max > 0)
-      paneRow = e.props.scroll?.offset ?? paneRow
+      // Filling, the pane fits its window exactly, so the desktop shows no scrollbar; only the cards scroll.
+      paneFilled = fill
       // Filling, the box is clipped to its rows, so the grid errs tall: 32 px a row outruns any code font's line height.
       const gridH = fill ? (bodyRows + 3) * 32 : Math.max(contentH, paneH)
       return (
-        <Box flexDirection="column" height={paneParked ? bodyRows + 2 : fill ? bodyRows : undefined} overflow={fill ? 'hidden' : 'visible'}>
+        <Box flexDirection="column" height={fill ? bodyRows : undefined} overflow={fill ? 'hidden' : 'visible'}>
           {/* The grid sizes the pane; the content is placed over it, as an
               absolute Box paints over the siblings before it. */}
           {gridTiles(gridH).map((tileH, i) => (
             <Svg key={`grid-${i}`} source={gridSvg(W, tileH)} alt="" width={W} height={tileH} />
           ))}
-          {/* Filling, the overlay spans the window's rows (parked: rows 1 to bodyRows), so row 2 can stretch. */}
-          <Box flexDirection="column" position="absolute" top={paneParked ? 1 : 0} bottom={fill ? (paneParked ? 1 : 0) : undefined} left={0} right={0} alignItems={align}>
+          {/* Filling, the overlay spans the window's rows, so row 2 can stretch. */}
+          <Box flexDirection="column" position="absolute" top={0} bottom={fill ? 0 : undefined} left={0} right={0} alignItems={align}>
             {/* The flow's name, while a flow runs. */}
             {title ? (
               <Box key="title" paddingX={1}>
@@ -2550,7 +2624,9 @@ export const register: Register = (on, options) => {
             {/* The Hideout, full width even in two columns. */}
             {tavern}
             {/* Row 2: the crew beside the skills and plugins. */}
-            <Box flexDirection={isTwoCol ? (isRtl() ? 'row-reverse' : 'row') : 'column'} flexGrow={fill ? 1 : 0}>
+            {/* Filling, each box here starts at height 0 and takes its share by flexGrow, so content never grows a card:
+                what does not fit is clipped and scrolls inside it. */}
+            <Box flexDirection={isTwoCol ? (isRtl() ? 'row-reverse' : 'row') : 'column'} flexGrow={fill ? 1 : 0} height={fill ? 0 : undefined} overflow={fill ? 'hidden' : undefined}>
               {left}
               {right}
             </Box>

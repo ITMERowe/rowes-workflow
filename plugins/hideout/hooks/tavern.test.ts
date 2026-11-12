@@ -1,6 +1,27 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { AgentRun, WorkItem } from '../types'
-import { crewOf, mainSpan, modelTint } from './register'
+import { crewOf, mainSpan, modelTint, walkKeyframes } from './register'
+
+test('a walk glides from the seat down to the aisle, along it and out of the door, fading as it goes through', () => {
+  const k = walkKeyframes('wk-x', { x: 200, y: 88 })
+  expect(k.startsWith('@keyframes wk-x{0%{transform:translate(200px,88px) scale(0.875);opacity:1}')).toBe(true)
+  expect(k).toContain('translate(200px,98px)')
+  expect(k).toContain('translate(20px,98px)')
+  expect(k.endsWith('100%{transform:translate(20px,62px) scale(0.75);opacity:0}}')).toBe(true)
+  // Turned round halfway: back from where it got to, ending at its seat.
+  const back = walkKeyframes('wk-y', { x: 200, y: 88 }, 0.5, 0)
+  expect(back.startsWith('@keyframes wk-y{0%{transform:translate(97px,98px)')).toBe(true)
+  expect(back.endsWith('100%{transform:translate(200px,88px) scale(0.875);opacity:1}}')).toBe(true)
+})
+
+test('a crab sent out by a short job walks back from as far as it got, not from the door', () => {
+  const run = { id: 't1', agentId: 'a1', type: 'Explore', description: 'x', model: '', status: 'done', startedAt: 10_000, endedAt: 11_000, contextTokens: 0, contextMax: 1, tokens: 0, costUsd: 0, steps: 1, round: 1 } as AgentRun
+  // 1 s out of a 4 s walk: a quarter of the way, so back home 1 s after it ended.
+  const crew = crewOf([run], 11_500)
+  expect(crew.go.explore).toEqual({ from: 0.25, to: 0, start: 11_000 })
+  expect(crew.walk.explore).toBe(0.13)
+  expect(crewOf([run], 12_100).go.explore).toBeUndefined()
+})
 
 const pane = { title: '', isFocused: false, bodyColumns: 80, placement: 'dock', scroll: { offset: 0, bodyRows: 60 }, view: {} } as const
 
@@ -28,7 +49,9 @@ test('desktop: a running agent and the working main session leave the hideout, a
   expect(scene).toContain('class="c-medium')
   expect(scene).toContain('fill="#7B7BF0"')
   expect(scene.length).toBeLessThan(131072)
-  expect(await ui.find({ type: 'Text', text: '6 home · 2 out' })).toBeTruthy()
+  // No head row over the scene; who is out is in its alt text.
+  expect(await ui.find({ type: 'Text', text: '6 home · 2 out' })).toBeFalsy()
+  expect(scene && (await ui.findAll({ type: 'Svg' })).some(el => String(el.props.alt).includes('out:'))).toBe(true)
   // The tavern no longer folds.
   expect(await ui.find({ key: 'fold-tavern' })).toBeFalsy()
 })
