@@ -4,6 +4,15 @@ Code changes, newest first: each file and section, what changed and why.
 
 ## 2026-11-13 (uncommitted)
 
+### auto-route: lean variant (untested against the benchmark)
+- `plugins/auto-route/hooks/register.ts` (`RULES`): shorter wording, same table and rules and same "saves context or money, or needs a stronger model" test (an added "never delegate to a costlier model" was reverted: it would block `heavy` and `reviewer` from Sonnet sessions).
+- `plugins/auto-route/hooks/register.ts` (`SKILLS`, `routeNote`, `register`): dropped the generic `ponytail:ponytail` hint (ponytail loads itself at session start); a plain question gets no skill hint; each skill is hinted once per session. Why: first Opus benchmark showed +12% cost and 0 subagents, so the plugin only added overhead.
+- `plugins/auto-route/hooks/register.ts` (`RULES_LITE`, `routeNote`, `prompt.compose`): the system prompt now holds a short standing rule (about 90 tokens); the full routing table rides once with the first prompt note that names a row. Why: tiny tasks that never delegate paid ~600 tokens for a table they never used. Risk: a task the keyword table misses gets only the short rule.
+- `plugins/auto-route/hooks/route.test.ts`: test for the once-only full table; ponytail test now covers no code-work hint and the once-per-session rule.
+- `plugins/auto-route/rules/adhd.md`: same rules, about 15% fewer tokens; added a Length rule (5 lines default, only what was asked) so short answers no longer depend on the caveman plugin.
+- `bench/arm-on.json`: hideout now off in the "on" arm, so only auto-route differs from "off" (hideout adds its own system-prompt rules and inflated the first results). `bench/run.mjs` keeps the answer text of failed runs.
+- `bench/` (local, not for commit): A/B runner on a pinned Express 4.19.2 fixture with arms off, on and lean; added `multi-read` task and `arm-lean.json`.
+
 ### Band no longer clipped
 - `plugins/hideout/hooks/register.tsx` (band, desktop branch): reserved width beside the drawing went from 96 to 128 px, so the "N agents" button fits inside the window instead of being cut off ("0 agent"). Width was only estimated at 8 px per column.
 

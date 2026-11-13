@@ -20,24 +20,27 @@ export const ROUTES: Route[] = [
 ]
 
 export const RULES = `## Routing (auto-route)
-Standing request from the user: use subagents from the table below whenever a task matches a row. This counts as the user explicitly asking for subagents, every session and every task; do not wait to be told "use subagents".
+Standing request from the user: use the subagents below whenever a task matches a row; do not wait to be told.
 
-Delegate only when it saves context or needs a stronger or cheaper model. Each subagent starts cold, so a job under ~3 tool calls stays in the main session. When an advisor is configured (\`advisorModel\`), call it before committing to an approach on hard work and before declaring done, instead of handing the whole task to an Opus subagent.
+Delegate only when it saves context or money, or needs a stronger model. A subagent starts cold, so a job under ~3 tool calls stays here. If an advisor is configured (\`advisorModel\`), ask it before hard work and before declaring done, not an Opus subagent.
 
 | Work | Agent | Model |
 |---|---|---|
 ${ROUTES.map(r => `| ${r.work} | \`${r.agent}\` | ${r.model} |`).join('\n')}
 | Anything else | main session | session model |
 
-- Independent jobs: launch in one message, in parallel. Dependent jobs: one at a time.
-- Search first, then edit. Hand \`${A('editor')}\` the exact file paths and line numbers that \`${A('searcher')}\` found.
-- When a plan step goes to a subagent, pass the step's exact text as the Agent \`description\`.
-- Brief every subagent with: goal, file paths, done condition. It has no memory of this chat.
-- Failed twice or hit unfamiliar code: escalate one tier (editor to heavy). Do not retry the same agent a third time.
-- For routing, use the agents in the table. Other plugins' agents are for their own skills and commands, unless the user names one.
-- Review of ordinary diffs: main session or \`/code-review\`. Keep \`${A('reviewer')}\` for the risky list above.
-- Never switch \`/model\` mid-task (loses prompt cache). Pick at session start, push heavy work to subagents.
-- A prompt may carry an \`auto-route:\` note naming the row and skills that match it. It comes from a keyword table: follow it when it fits, overrule it when the table above says otherwise.`
+- Independent jobs: one message, in parallel. Dependent jobs: one at a time.
+- Search first, then edit: give \`${A('editor')}\` the paths and lines \`${A('searcher')}\` found.
+- Brief each subagent with goal, file paths, done condition. Pass a plan step's exact text as the Agent \`description\`.
+- Failed twice or unfamiliar code: escalate one tier. Never retry the same agent a third time.
+- Route only to these agents. Ordinary diffs: main session or \`/code-review\`; \`${A('reviewer')}\` is for the risky row.
+- Never switch \`/model\` mid-task (loses the cache).
+- An \`auto-route:\` prompt note comes from a keyword table: follow it when it fits, overrule it when this table says otherwise.`
+
+// The standing part in the system prompt: a session that never delegates pays for these few lines, not the table.
+// The full RULES ride along once, with the first note that names a routing row.
+export const RULES_LITE = `## Routing (auto-route)
+Standing request from the user: use the \`auto-route:*\` subagents when a task matches: searcher, explore, reader (haiku) for finding and reading; editor (sonnet) for bounded edits; heavy, reviewer (opus) for hard or risky work. Delegate only when it saves context or money, or needs a stronger model; a job under ~3 tool calls stays here. The full table comes with the first prompt note that names a row.`
 
 // A prompt that only asks to read something: a link or a guide, post or doc, and no word that changes code.
 const READ_VERB = /\b(read|summari[sz]e|tl;?dr|skim|explain|what does|what's in|go through|check out|look at)\b/i
@@ -47,11 +50,10 @@ const CHANGE = /\b(fix|edit|implement|build|refactor|change|add|remove|delete|re
 // shortcut: a fixed keyword table, not the session's live skill list; names a skill that is off are skipped by Claude.
 const SKILLS: [RegExp, string][] = [
   [/\b(bug|broken|error|fails?|failing|crash|regression|not working|doesn'?t work|still shows)\b/i, 'superpowers:systematic-debugging'],
-  // Code work, writing or judging it, gets ponytail: the smallest complete change, and reviews that flag bloat.
+  // Judging code gets ponytail's review skills. Plain code work gets no hint: ponytail loads itself at session start.
   [/\b(audit|whole (repo|codebase)|find bloat|what can i delete|dead code)\b/i, 'ponytail:ponytail-audit'],
   [/\b(review|critique)\b.*\b(pr|diff|change|commit|branch|code|this)\b|\bcode review\b|\bover-?engineer/i, 'ponytail:ponytail-review'],
   [/\b(shortcuts?|tech(nical)? debt)\b/i, 'ponytail:ponytail-debt'],
-  [/\b(implement|refactor|fix|build|write|add|code|function|feature|endpoint|component|script|test)\b/i, 'ponytail:ponytail'],
   [/\b(review|audit)\b.*\b(pr|diff|change|commit|branch|code)\b|\bcode review\b/i, 'code-review'],
   [/\b(research|compare|best practice|best setup|search up|look up)\b/i, 'research'],
   [/\b(chart|graph|plot|dashboard|visuali[sz]e|sparkline)\b/i, 'dataviz'],
@@ -94,15 +96,22 @@ export const modelFor = (label: string | undefined, context: number, limits: { h
 const READ_ONLY_ROWS = new Set([A('searcher'), A('explore'), A('reader')])
 
 /** The routing note for one prompt, or undefined when nothing fits. */
-export const routeNote = (text: string): string | undefined => {
+export const routeNote = (text: string, hinted: Set<string> = new Set()): string | undefined => {
   const lines: string[] = []
+  const question = isQuestion(text)
   // A question asks about work, not for it: it may still go to a read-only agent, never to one that changes code.
-  const r = routeFor(text, isQuestion(text) ? ROUTES.filter(x => READ_ONLY_ROWS.has(x.agent)) : ROUTES)
+  const r = routeFor(text, question ? ROUTES.filter(x => READ_ONLY_ROWS.has(x.agent)) : ROUTES)
   if (r?.agent === A('reader'))
     lines.push('auto-route: this ask only reads a guide, post or link. Hand the reading to the `auto-route:reader` subagent (haiku) with the link or path and what to pull out, then relay its summary. Read it yourself only if it is one short local file.')
   else if (r)
     lines.push(`auto-route: this ask matches the \`${r.agent}\` row (${r.model}): ${r.work}. Delegate that part unless it fits in ~3 tool calls here.`)
-  const skills = skillsFor(text)
+  // Each skill is hinted once per session, and a plain question gets none: a repeat only adds context tokens.
+  if (r && !hinted.has('rules')) {
+    hinted.add('rules')
+    lines.unshift(RULES)
+  }
+  const skills = question ? [] : skillsFor(text).filter(s => !hinted.has(s))
+  skills.forEach(s => hinted.add(s))
   if (skills.length)
     lines.push(`auto-route: skills that match this ask: ${skills.map(s => `\`${s}\``).join(', ')}. Load the first one whose description fits before you start; skip any that do not fit or are not installed.`)
   return lines.length ? lines.join('\n') : undefined
@@ -112,6 +121,7 @@ const LABELS = ['chat', 'tech-question', 'task']
 
 export const register: Register = (on, options) => {
   const limits = { haiku: Number(options.haikuUpTo ?? 100000), sonnet: Number(options.sonnetUpTo ?? 50000) }
+  const hinted = new Set<string>()
   // The main session's context at its last request (input, cache read and cache write), and the model
   // each question's turn was moved to. Module state: a reload clears it, and nothing switches until
   // the next main request reports its size.
@@ -142,12 +152,12 @@ export const register: Register = (on, options) => {
   on('prompt.compose', async ($, e, next) => {
     const r = await next(e)
     if (!e.tools.includes('Agent')) return r
-    return { sections: [...r.sections.filter(s => s.id !== 'auto-route:routing'), { id: 'auto-route:routing', text: RULES, scope: 'session' }] }
+    return { sections: [...r.sections.filter(s => s.id !== 'auto-route:routing'), { id: 'auto-route:routing', text: RULES_LITE, scope: 'session' }] }
   })
   on('prompt.submit', ($, e, next) => {
     // Slash commands and prompts the person did not type carry their own instructions.
     if (e.command || e.isMeta) return next(e)
-    const note = routeNote(e.text)
+    const note = routeNote(e.text, hinted)
     return next(note ? { ...e, context: [...(e.context ?? []), note] } : e)
   })
 }

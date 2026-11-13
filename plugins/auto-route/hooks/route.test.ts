@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { isQuestion, isReadOnly, modelFor, routeFor, routeNote, RULES, skillsFor } from './register.ts'
+import { isQuestion, isReadOnly, modelFor, routeFor, routeNote, RULES, RULES_LITE, skillsFor } from './register.ts'
 
 test('reading a guide or link routes to the reader; changing code does not', () => {
   expect(isReadOnly('read this guide https://example.com/post and tell me the gist')).toBe(true)
@@ -18,6 +18,14 @@ test('every routing row is picked by its kind of ask', () => {
   expect(pick('map the repo for me')).toBe('explore')
   expect(pick('rename crab to sprite')).toBe('editor')
   expect(pick('hello there')).toBeUndefined()
+})
+
+test('the full table rides with the first routed note only; the system prompt holds the short rule', () => {
+  const hinted = new Set<string>()
+  expect(routeNote('rename these 40 files', hinted)).toContain('| Work | Agent | Model |')
+  expect(routeNote('rename these 40 files', hinted) ?? '').not.toContain('| Work | Agent | Model |')
+  expect(routeNote('hello there', new Set())).toBeUndefined()
+  expect(RULES_LITE.length).toBeLessThan(RULES.length / 2)
 })
 
 test('the rules hold the whole table', () => {
@@ -92,8 +100,11 @@ test('the README examples route where it says', () => {
   expect(note('rework the readme so it is easier to read')).not.toContain('auto-route:reader')
 })
 
-test('code work gets ponytail: writing, reviewing, auditing', () => {
-  expect(skillsFor('implement a retry helper')).toContain('ponytail:ponytail')
+test('judging code gets ponytail; plain code work gets no hint, and a skill is hinted once', () => {
+  expect(skillsFor('implement a retry helper')).toEqual([])
+  const hinted = new Set<string>()
+  expect(routeNote('review my PR', hinted)).toContain('ponytail:ponytail-review')
+  expect(routeNote('review my PR', hinted)).toBeUndefined()
   expect(skillsFor('review my PR')[0]).toBe('ponytail:ponytail-review')
   expect(skillsFor('audit the whole repo')[0]).toBe('ponytail:ponytail-audit')
   expect(skillsFor('list the shortcuts we took')).toContain('ponytail:ponytail-debt')
