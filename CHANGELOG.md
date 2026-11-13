@@ -4,6 +4,9 @@ Code changes, newest first: each file and section, what changed and why.
 
 ## 2026-11-13 (uncommitted)
 
+### Serena removed
+- `.gitignore`: dropped the `.serena/` line; the local `.serena/` folder (empty memories, cache) was deleted. Serena is no longer used here.
+
 ### Root README reworked
 - `README.md`: a two-column summary table under the crew image; one install block (four lines) instead of four; the routing table now comes before its bullets, and the bullets are shorter. Content and links unchanged.
 
