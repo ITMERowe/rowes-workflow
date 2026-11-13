@@ -31,26 +31,33 @@ The limits exist because each model has its own prompt cache. The first switched
 
 After a reload nothing switches until the main session makes one request, because until then the context size is unknown.
 
+## What it does at session start
+
+Two hooks in `hooks/seed.json` run each time a session starts:
+
+- **Seed.** `hooks/seed.mjs` copies `seed/CLAUDE.md` and `seed/agents/Explore.md` into `~/.claude`, but only when those files are missing. A fresh install gets your global instructions and `Explore` agent back, and later edits in `~/.claude` are never overwritten. Edit the files in `seed/` to change what a new machine gets.
+- **ADHD rules.** `hooks/adhd.mjs` adds `rules/adhd.md` to the session: the answer or next action first, numbered steps for real multi-step work, one next action at the end, and terse wording (short sentences, no filler, code and errors exact). Say "stop adhd mode" to turn it off for the session.
+
 ## Install
 
 In Claude Code (terminal, desktop app or IDE):
 
 ```
-/plugin marketplace add ITMERowe/rowes-workflow
+/plugin marketplace add ITMERowe/exiles
 ```
 
 ```
-/plugin install auto-route@rowes-workflow
+/plugin install auto-route@exiles
 ```
 
 From your terminal:
 
 ```bash
-claude plugin marketplace add ITMERowe/rowes-workflow
+claude plugin marketplace add ITMERowe/exiles
 ```
 
 ```bash
-claude plugin install auto-route@rowes-workflow
+claude plugin install auto-route@exiles
 ```
 
 Then run `/reload-plugins`.
@@ -68,4 +75,4 @@ The notes come from a keyword list, so some prompts will match the wrong row or 
 
 ## Credits
 
-The routing tiers come from [savvy-flow](https://github.com/JohnnyVizz/claude-kit) by JohnnyVizz: `heavy` and `fable` follow its savvy-heavy and savvy-fable workers. If [Hideout](https://github.com/ITMERowe/rowes-workflow/tree/main/plugins/hideout) is installed, its agents panel shows these agents with their models. Neither plugin is needed.
+The routing tiers come from [savvy-flow](https://github.com/JohnnyVizz/claude-kit) by JohnnyVizz: `heavy` and `fable` follow its savvy-heavy and savvy-fable workers. If [Hideout](https://github.com/ITMERowe/exiles/tree/main/plugins/hideout) is installed, its agents panel shows these agents with their models. Neither plugin is needed.

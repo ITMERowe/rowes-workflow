@@ -6,6 +6,7 @@
     "name": "ITMERowe"
   },
   "license": "MIT",
+  "hooks": "./hooks/seed.json",
   "userConfig": {
     "haikuUpTo": {
       "type": "string",
