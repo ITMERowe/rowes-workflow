@@ -4,6 +4,9 @@ Code changes, newest first: each file and section, what changed and why.
 
 ## 2026-11-13 (uncommitted)
 
+### Root README reworked
+- `README.md`: a two-column summary table under the crew image; one install block (four lines) instead of four; the routing table now comes before its bullets, and the bullets are shorter. Content and links unchanged.
+
 ### READMEs describe the session-start hooks
 - `plugins/auto-route/README.md`: new "What it does at session start" section (seed copy and ADHD rules).
 - `README.md`: one bullet under auto-route for the same.

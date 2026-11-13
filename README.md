@@ -1,38 +1,30 @@
 # Exiles
 
-**Stop paying Opus prices for grep.** Two Claude Code plugins: one sends every job to the right model, and the other shows your whole crew at work.
+**Stop paying Opus prices for grep.** Two Claude Code plugins: one sends every job to the right model, the other lets you watch your crew work.
 
 <p align="center"><img src="docs/crew.svg" alt="The crab crew: Tactician, Pathfinder, Ritualist, Martial Artist, Gladiator, Stormweaver, Chronomancer and Exile, each acting out its job" width="880"></p>
 
+| | **auto-route** | **Hideout** |
+|---|---|---|
+| What it does | Sends each job to the cheapest model that can do it | Shows every agent live, as a pixel crab in a tavern |
+| You get | Haiku for search, Sonnet for edits, Opus for risky work | A band above the prompt, plus a crew panel (`/agents-info`) |
+
 ## Install
 
-Run these in Claude Code, one at a time:
+In Claude Code, one line at a time:
 
 ```
 /plugin marketplace add ITMERowe/exiles
-```
-
-```
 /plugin install auto-route@exiles
-```
-
-```
 /plugin install hideout@exiles
-```
-
-```
 /reload-plugins
 ```
 
-Each plugin works on its own, so you can install just one. To install from a terminal, run the same commands as `claude plugin marketplace add …` and `claude plugin install …`.
+Each plugin works alone, so install just one if you like. From a terminal, run the same lines as `claude plugin ...`.
 
-## auto-route: the right model for every job
+## auto-route
 
-- **Seven ready-made agents.** Search and reading run on **Haiku**, edits on **Sonnet**, and risky reviews and hard debugging on **Opus**. **Fable** runs only when you ask for it.
-- **Routing without asking.** Every session gets the routing rules. Every prompt gets a hidden note naming the agent and the skills that fit it. Code work, whether writing, reviewing or auditing, gets ponytail: the smallest complete change.
-- **Cheap answers to simple questions.** Plain questions go to Haiku and technical ones to Sonnet, but only while the switch actually saves money.
-- **Your setup, restored.** At session start it copies your `CLAUDE.md` and `Explore` agent into `~/.claude` if they are missing, and adds a short set of ADHD-friendly answer rules: action first, terse wording.
-- **Opus on call.** Run `/advisor opus`, and Claude asks Opus at the hard moments instead of running on it the whole time.
+Every session gets a routing table, and every prompt gets a hidden note naming the agent and skills that fit.
 
 | Ask | Goes to |
 |---|---|
@@ -42,14 +34,18 @@ Each plugin works on its own, so you can install just one. To install from a ter
 | "review the payment migration" | `reviewer` · Opus |
 | "find the root cause of the flaky build" | `heavy` · Opus |
 
-[How to change the routing →](plugins/auto-route/README.md)
+- **Cheap questions.** Plain questions run on Haiku and technical ones on Sonnet, only while that actually saves money.
+- **Opus on call.** `/advisor opus` makes Claude ask Opus at the hard moments, not run on it all day.
+- **Your setup, restored.** It copies your `CLAUDE.md` and `Explore` agent into `~/.claude` if missing, and adds short ADHD-friendly answer rules.
 
-## Hideout: your crew, live
+[Change the routing →](plugins/auto-route/README.md)
 
-- **The band** above the prompt shows plan progress and the usage left in your 5-hour and 7-day windows.
-- **The tavern** tops the crew panel (`/agents-info`): a 2.5D pixel tavern where your crew hangs out by the fire. A crab walks out the door while its kind of agent is on a job and comes back when the job is done.
-- **The crew panel** lists every agent with its model, progress and context. Click a row to see its tool calls.
-- **Pixel crabs** act out each job. The Pathfinder searches, the Martial Artist edits, the Stormweaver reviews, and the Tactician plans the main session. The shell colour shows the model: Haiku grey, Sonnet blue, Opus yellow, Fable orange.
+## Hideout
+
+- **The band** above the prompt: plan progress and the usage left in your 5-hour and 7-day windows.
+- **The tavern** on top of the crew panel: a pixel tavern where crabs walk out the door when their agent starts a job, and back when it's done.
+- **The crew panel** lists every agent with its model, progress and context. Click a row for its tool calls.
+- **Crab colours** show the model: Haiku grey, Sonnet blue, Opus yellow, Fable orange.
 
 [More about Hideout →](plugins/hideout/README.md)
 
@@ -60,9 +56,9 @@ Each plugin works on its own, so you can install just one. To install from a ter
 git clone https://github.com/ITMERowe/exiles && cd exiles && sh install.sh
 ```
 
-On Windows, run `./install.ps1` instead of `sh install.sh`. Paste the snippet it prints into `~/.claude/CLAUDE.md`, then run `/reload-plugins`.
+On Windows, run `./install.ps1` instead. Paste the snippet it prints into `~/.claude/CLAUDE.md`, then run `/reload-plugins`.
 
-Along with auto-route and Hideout, it installs ponytail (smallest-change code), caveman (terse replies), superpowers (process skills) and savvy-flow (a planner). To skip one, remove its line from [`plugins.txt`](plugins.txt) first.
+It also installs ponytail (smallest-change code), caveman (terse replies), superpowers (process skills) and savvy-flow (a planner). To skip one, remove its line from [`plugins.txt`](plugins.txt) first.
 
 Don't run Hideout alongside the original `savvy-progress`, or you'll get two panels.
 
@@ -75,9 +71,6 @@ From `plugins/auto-route` or `plugins/hideout`, after each change:
 
 ```bash
 claude plugin validate .
-```
-
-```bash
 claude plugin test .
 ```
 
