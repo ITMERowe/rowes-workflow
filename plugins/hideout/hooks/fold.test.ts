@@ -16,6 +16,25 @@ test('desktop: a section header hides its rows, and shows them again', async ($,
   expect(await planRows()).toBe(2)
 })
 
+test('desktop: the Finished section draws its newest 30 rows and counts the rest', async ($, on) => {
+  mock.clock(on)
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  let n = 0
+  on('agent.spawn', () => ({ model: 'claude-haiku-5-5', agentId: `a${++n}` }))
+  on('turn.complete', () => ({ text: '' }) as never)
+  for (let i = 1; i <= 32; i++) {
+    await $.agent.spawn({ tool_use_id: `t${i}`, prompt: 'p', description: `Job ${i}`, subagentType: 'general-purpose', provider: 'engine', parentModel: 'claude-opus-5-5', background: false, fork: false } as never)
+    await ($.turn.complete as (e: unknown) => Promise<unknown>)({ agentId: `a${i}`, reason: 'answer', answer: 'ok' })
+  }
+  const ui = await $.ui.mount({ plugin: 'hideout', surface: 'desktop', component: 'Pane', requestId: 'hideout-agents', props: pane })
+  expect((await ui.find({ key: 'fold-done' }))?.props.label).toBe('▾ Finished · 32')
+  const alts = (await ui.findAll({ type: 'Svg' })).map(el => String(el.props.alt))
+  expect(alts.filter(a => a.startsWith('Job ')).length).toBe(30)
+  expect(alts).toContain('+2 more')
+  // The two oldest are the ones left out.
+  expect(alts.some(a => a.startsWith('Job 1:') || a.startsWith('Job 2:'))).toBe(false)
+})
+
 test('desktop: a task row with tool calls lists them when its toggle is pressed', async ($, on) => {
   on('ui.open', () => ({ value: { isPlaced: true } }))
   mock.clock(on)
@@ -50,4 +69,6 @@ test('desktop: the main session row shows even before any task or tool call', as
   on('ui.open', () => ({ value: { isPlaced: true } }))
   const ui = await $.ui.mount({ plugin: 'hideout', surface: 'desktop', component: 'Pane', requestId: 'hideout-agents', props: pane })
   expect((await ui.findAll({ type: 'Svg' })).some(el => String(el.props.alt).startsWith('Main session'))).toBe(true)
+  // What fits fills the window exactly: the pane is the window's height, with no rows over to scroll.
+  expect((await ui.find({ type: 'Box' }))?.props.height).toBe(pane.scroll.bodyRows)
 })

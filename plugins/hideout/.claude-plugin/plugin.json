@@ -3,8 +3,7 @@
   "version": "3.0.0",
   "description": "Your crew's hideout in Claude Code: a band above the prompt (plan progress and usage left) and a crew panel (/agents-info): every subagent as a pixel crab, background tasks, the task list, cost and tokens, and the skills and plugins in use.",
   "dependencies": [
-    "ponytail@ponytail",
-    "ribbon@robonuggets"
+    "ponytail@ponytail"
   ],
   "author": {
     "name": "ITMERowe",
@@ -12,18 +11,6 @@
   },
   "types": "./types/index.d.ts",
   "userConfig": {
-    "language": {
-      "type": "string",
-      "title": "Panel language",
-      "description": "auto follows Claude Code's language setting, then the system locale; en, ru or he (Hebrew, drawn right to left)",
-      "default": "auto",
-      "options": [
-        "auto",
-        "en",
-        "ru",
-        "he"
-      ]
-    },
     "autoOpen": {
       "type": "string",
       "title": "Open the agents panel",
@@ -35,7 +22,7 @@
       ]
     }
   },
-  "homepage": "https://github.com/ITMERowe/rowes-workflow/tree/main/plugins/hideout",
-  "repository": "https://github.com/ITMERowe/rowes-workflow",
+  "homepage": "https://github.com/ITMERowe/exiles/tree/main/plugins/hideout",
+  "repository": "https://github.com/ITMERowe/exiles",
   "license": "MIT"
 }

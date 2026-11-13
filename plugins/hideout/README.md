@@ -2,7 +2,7 @@
 
 Your crew's hideout in Claude Code. A plugin with two parts: a band above the prompt, and a live panel for the main session and each of its subagents. More game features are on the way.
 
-- **The band:** one card above the prompt. It shows the plan's title, tasks done out of planned and the percent, plus the usage left in your 7-day and 5-hour windows with their reset times. It replaces ribbon's and ponytail's own rows, so nothing shows twice. A button with the agent count opens the panel.
+- **The band:** one card above the prompt. It shows the plan's title, tasks done out of planned and the percent, plus the usage left in your 7-day and 5-hour windows with their reset times. It reads the usage itself and replaces ribbon's and ponytail's own rows when they are installed, so nothing shows twice. A button with the agent count opens the panel.
 - **The crew panel** (`/agents-info` toggles it; `/agents-info open` opens it without toggling):
   - Session totals in the terminal: cost, tokens and time.
   - The Hideout, on desktop: a pixel tavern at night at the top of the panel. Each crab has its seat, and walks out of the door while an agent in its costume is on a job; the Tactician leaves while the main session works. Each crab's shell shows the model of its costume's latest run.
@@ -32,7 +32,6 @@ The cost is an estimate from token counts and a built-in price table (`PRICES` i
 
 ## Settings
 
-- `language`: `auto` (default), `en`, `ru` or `he`. Hebrew draws the band and the panel right to left. `auto` follows Claude Code's `language` setting, then the system locale, and falls back to English.
 - `autoOpen`: `workers` (default) or `any`.
   - `workers`: the panel opens by itself when a plan is reported or a planned worker starts.
   - `any`: it also opens, once per session, when any other subagent starts.
@@ -42,7 +41,7 @@ The cost is an estimate from token counts and a built-in price table (`PRICES` i
 Set them in `/config`. For a plugin loaded by hand, set them in `~/.claude/settings.json`:
 
 ```json
-{ "pluginConfigs": { "hideout": { "options": { "language": "ru" } } } }
+{ "pluginConfigs": { "hideout": { "options": { "autoOpen": "any" } } } }
 ```
 
 ## Install
@@ -50,26 +49,26 @@ Set them in `/config`. For a plugin loaded by hand, set them in `~/.claude/setti
 In Claude Code (terminal, desktop app or IDE):
 
 ```
-/plugin marketplace add ITMERowe/rowes-workflow
+/plugin marketplace add ITMERowe/exiles
 ```
 
 ```
-/plugin install hideout@rowes-workflow
+/plugin install hideout@exiles
 ```
 
 From your terminal:
 
 ```bash
-claude plugin marketplace add ITMERowe/rowes-workflow
+claude plugin marketplace add ITMERowe/exiles
 ```
 
 ```bash
-claude plugin install hideout@rowes-workflow
+claude plugin install hideout@exiles
 ```
 
 Then run `/reload-plugins`.
 
-Hideout needs ribbon and ponytail, and Claude Code installs them along with it. The full setup is in the [repository README](../../README.md).
+Hideout needs ponytail, and Claude Code installs it along with it. The usage row follows the idea of ribbon (RoboNuggets, MIT) but shares no code with it. The full setup is in the [repository README](../../README.md).
 
 ## Developing
 

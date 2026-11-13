@@ -49,10 +49,8 @@ export type AgentRun = {
 export type Panel = {
   isCompact: boolean
   isDoneCollapsed: boolean
-  /** Folded sections, by key: run, plan, tasks, bg. Finished uses isDoneCollapsed. */
+  /** Folded sections, by key: run, plan. Finished uses isDoneCollapsed. */
   collapsed?: Record<string, boolean>
-  /** Each section's own scroll: the first item it shows. */
-  offsets?: Record<string, number>
   autoOpenedFor: string
   /** Rows whose tool-call list is shown, by row key. */
   openRows?: string[]
@@ -78,8 +76,6 @@ export type WorkItem = {
   kind: WorkKind
   label: string
   at: number
-  /** The file it read or edited, as the tool was given it. */
-  path?: string
 }
 
 export type SkillKind = 'skill' | 'plugin'

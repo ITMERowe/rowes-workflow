@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { bandSvg, barGroup, cardAt, crab, isOverdue, kitLabel, kitOf, kitRowsOf, modelTint, pluginsIn, usageSvg, useKit, workOf } from './register'
+import { bandSvg, barGroup, crab, isOverdue, kitLabel, kitOf, kitRowsOf, modelTint, pluginsIn, usageSvg, useKit, workOf } from './register'
 
 test('a tool call becomes one work line', () => {
   expect(workOf('Edit', { file_path: 'C:\\repo\\src\\app.ts' })).toEqual(['edit', 'src/app.ts'])
@@ -53,18 +53,6 @@ test('a plugin:skill name reads as the skill, its plugin after when different', 
   expect(kitLabel('ui-ux-pro-max:ui-ux-pro-max')).toBe('ui-ux-pro-max')
   expect(kitLabel('taste-skill:design-taste-frontend')).toBe('design-taste-frontend · taste-skill')
   expect(kitLabel('graphify')).toBe('graphify')
-})
-
-test('a wheel tick scrolls the card under the pointer', () => {
-  const rects = [
-    { key: 'crew', x: 0, y: 54, w: 300, h: 400, max: 5, step: 1 },
-    { key: 'kit', x: 300, y: 54, w: 300, h: 400, max: 0, step: 1 },
-    { key: 'map', x: 0, y: 470, w: 600, h: 300, max: 200, step: 48 },
-  ]
-  expect(cardAt(rects, 2, 10)?.key).toBe('crew')
-  expect(cardAt(rects, 50, 10)?.key).toBe('kit')
-  expect(cardAt(rects, 10, 30)?.key).toBe('map')
-  expect(cardAt(rects, 10, 1)).toBeUndefined()
 })
 
 test('a background task whose end notice never came stops counting as running', () => {

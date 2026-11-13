@@ -52,11 +52,10 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect((await bar.find({ key: 'hideout-agents' }))?.props.label).toBe('200 agents')
 
     const ui = await $.ui.mount({ plugin: PLUGIN, surface, component: 'Pane', requestId: 'hideout-agents', props: pane })
-    // The desktop heading is a fold button; 200 planned rows scroll inside the Agents card, so the pane does not.
+    // The desktop heading is a fold button; the Agents card grows to hold all 200 planned rows and the pane scrolls.
     if (surface === 'desktop') {
       expect((await ui.find({ key: 'fold-plan' }))?.props.label).toBe('▾ Planned · 200')
-      expect(await ui.find({ key: 'dn-plan' })).toBeUndefined()
-      expect((await ui.findAll({ type: 'Svg' })).filter(el => String(el.props.alt).includes(': planned')).length).toBeLessThan(20)
+      expect((await ui.findAll({ type: 'Svg' })).filter(el => String(el.props.alt).includes(': planned')).length).toBe(200)
     } else expect(await ui.find({ text: /Planned · 200/ })).toBeDefined()
     const drawn = (await ui.findAll({ type: 'Svg' })).map(el => String(el.props.source)).join('')
     expect(drawn).not.toContain('native code')
