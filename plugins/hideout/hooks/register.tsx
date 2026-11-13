@@ -2424,7 +2424,7 @@ export const register: Register = (on, options) => {
     if (e.surface !== 'terminal' && 'Svg' in ui) {
       const { Svg } = ui
       // About 8 CSS px per reported column; the rest is the count, the dismiss and their gaps.
-      const width = Math.max(220, Math.min(1600, (e.props.bodyColumns || 100) * 8 - 96))
+      const width = Math.max(220, Math.min(1600, (e.props.bodyColumns || 100) * 8 - 128))
       const inner = width - 16
       const rows = [...(f ? [rowSvg(f, inner, isWorking)] : []), ...(ws.length ? [usageSvg(ws, inner, at)] : [])]
       const alt = [f ? `${f.title}: ${label(f)}, ${percent}` : '', usageAlt].filter(Boolean).join('; ')

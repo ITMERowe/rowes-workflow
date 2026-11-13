@@ -4,6 +4,9 @@ Code changes, newest first: each file and section, what changed and why.
 
 ## 2026-11-13 (uncommitted)
 
+### Band no longer clipped
+- `plugins/hideout/hooks/register.tsx` (band, desktop branch): reserved width beside the drawing went from 96 to 128 px, so the "N agents" button fits inside the window instead of being cut off ("0 agent"). Width was only estimated at 8 px per column.
+
 ### Serena removed
 - `.gitignore`: dropped the `.serena/` line; the local `.serena/` folder (empty memories, cache) was deleted. Serena is no longer used here.
 
