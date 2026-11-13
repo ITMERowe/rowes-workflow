@@ -2,6 +2,12 @@
 
 Code changes, newest first: each file and section, what changed and why.
 
+## 2026-11-13
+
+### hideout: band count and width
+- `plugins/hideout/hooks/register.tsx` (AbovePrompt): the "N agents" count now counts running and planned agents only, not finished ones. Why: finished agents stayed in the count.
+- Same file: band width is `cols * 7.5` minus a reserve sized from the count label and dismiss button, not a fixed 8 px per column minus 128. Why: the old guess clipped the label ("3 agent") and did not follow width changes.
+
 ## 2026-11-13 (uncommitted)
 
 ### auto-route: lean variant (untested against the benchmark)

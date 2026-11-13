@@ -2411,7 +2411,8 @@ export const register: Register = (on, options) => {
     const list = await read($, agents)
     // Workers running now, from the agents list: the bar's faint layer and the label's count.
     const f = stored && { ...stored, running: list.filter(a => a.status === 'running' && tierOf(a.type) !== 'other').length }
-    const crew = list.length + (f ? plannedOf(f, list).length : 0)
+    // Only agents still working or planned count; finished ones stay in the panel, not the band.
+    const crew = list.filter(a => a.status === 'running').length + (f ? plannedOf(f, list).length : 0)
     const isWorking = list.some(a => a.status === 'running')
     // The clock is read only for the usage resets: a band without them needs no clock.
     const at = ws.length ? await $.clock.now() : 0
@@ -2423,8 +2424,10 @@ export const register: Register = (on, options) => {
     // The terminal's element table is completed with an `Svg` that draws nothing: test the surface too.
     if (e.surface !== 'terminal' && 'Svg' in ui) {
       const { Svg } = ui
-      // About 8 CSS px per reported column; the rest is the count, the dismiss and their gaps.
-      const width = Math.max(220, Math.min(1600, (e.props.bodyColumns || 100) * 8 - 128))
+      // About 7.5 CSS px per reported column (a little low, so the band never overflows); the
+      // reserve grows with the count's label, plus the dismiss button and the gaps.
+      const reserve = Math.ceil(textWidth(`${crew} ${tr().agentsCount}`, 13)) + 24 + (dismiss ? 28 : 0) + 24
+      const width = Math.max(220, Math.min(1600, Math.floor((e.props.bodyColumns || 100) * 7.5 - reserve)))
       const inner = width - 16
       const rows = [...(f ? [rowSvg(f, inner, isWorking)] : []), ...(ws.length ? [usageSvg(ws, inner, at)] : [])]
       const alt = [f ? `${f.title}: ${label(f)}, ${percent}` : '', usageAlt].filter(Boolean).join('; ')
