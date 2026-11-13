@@ -1,9 +1,9 @@
 {
-  "name": "rowes-workflow",
+  "name": "exiles",
   "owner": {
     "name": "Rowe"
   },
-  "description": "Rowe's Claude Code workflow: the auto-route model routing and the band crew panel.",
+  "description": "Exiles, a Claude Code workflow: the auto-route model routing and the band crew panel.",
   "plugins": [
     {
       "name": "hideout",

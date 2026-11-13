@@ -1,4 +1,4 @@
-# Rowe's Workflow
+# Exiles
 
 **Stop paying Opus prices for grep.** Two Claude Code plugins: one sends every job to the right model, and the other shows your whole crew at work.
 
@@ -9,15 +9,15 @@
 Run these in Claude Code, one at a time:
 
 ```
-/plugin marketplace add ITMERowe/rowes-workflow
+/plugin marketplace add ITMERowe/exiles
 ```
 
 ```
-/plugin install auto-route@rowes-workflow
+/plugin install auto-route@exiles
 ```
 
 ```
-/plugin install hideout@rowes-workflow
+/plugin install hideout@exiles
 ```
 
 ```
@@ -31,6 +31,7 @@ Each plugin works on its own, so you can install just one. To install from a ter
 - **Seven ready-made agents.** Search and reading run on **Haiku**, edits on **Sonnet**, and risky reviews and hard debugging on **Opus**. **Fable** runs only when you ask for it.
 - **Routing without asking.** Every session gets the routing rules. Every prompt gets a hidden note naming the agent and the skills that fit it. Code work, whether writing, reviewing or auditing, gets ponytail: the smallest complete change.
 - **Cheap answers to simple questions.** Plain questions go to Haiku and technical ones to Sonnet, but only while the switch actually saves money.
+- **Your setup, restored.** At session start it copies your `CLAUDE.md` and `Explore` agent into `~/.claude` if they are missing, and adds a short set of ADHD-friendly answer rules: action first, terse wording.
 - **Opus on call.** Run `/advisor opus`, and Claude asks Opus at the hard moments instead of running on it the whole time.
 
 | Ask | Goes to |
@@ -53,15 +54,15 @@ Each plugin works on its own, so you can install just one. To install from a ter
 [More about Hideout →](plugins/hideout/README.md)
 
 <details>
-<summary><b>The full workflow</b>: the installer, with Rowe's companion plugins</summary>
+<summary><b>The full workflow</b>: the installer, with the companion plugins</summary>
 
 ```bash
-git clone https://github.com/ITMERowe/rowes-workflow && cd rowes-workflow && sh install.sh
+git clone https://github.com/ITMERowe/exiles && cd exiles && sh install.sh
 ```
 
 On Windows, run `./install.ps1` instead of `sh install.sh`. Paste the snippet it prints into `~/.claude/CLAUDE.md`, then run `/reload-plugins`.
 
-Along with auto-route and Hideout, it installs ribbon (plan usage), ponytail (smallest-change code), caveman (terse replies), i-have-adhd (action-first answers), superpowers (process skills) and savvy-flow (a planner). To skip one, remove its line from [`plugins.txt`](plugins.txt) first.
+Along with auto-route and Hideout, it installs ponytail (smallest-change code), caveman (terse replies), superpowers (process skills) and savvy-flow (a planner). To skip one, remove its line from [`plugins.txt`](plugins.txt) first.
 
 Don't run Hideout alongside the original `savvy-progress`, or you'll get two panels.
 

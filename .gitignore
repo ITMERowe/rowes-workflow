@@ -1,3 +1,8 @@
 **/.claude-plugin/types/
 graphify-out/
 .serena/
+HANDOFF.md
+.claude/
+crabs-preview.html
+tavern-iso-gen.mjs
+tavern-iso-preview.html
