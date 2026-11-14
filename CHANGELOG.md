@@ -3,6 +3,11 @@
 Code changes, newest first: each file and section, what changed and why.
 
 ## 2026-11-14 (uncommitted)
+### auto-route 0.5.3: more routing rows, new verifier agent
+- `plugins/auto-route/agents/verifier.md` (new, haiku, Read/Grep/Glob/Bash): runs build, lint, typecheck and tests and reports pass or fail with the error lines. Why: test and build output is long and stays in the main context for every later call; Haiku can read it instead.
+- `plugins/auto-route/hooks/register.ts` (ROUTES): new `verifier` row; wider keywords for `reviewer` (oauth, jwt, encrypt, xss, csrf, rbac, deleting users/data), `heavy` (memory leak, performance regression), `searcher` (find all, grep for, which files, how many files), `explore` (read through, get familiar with, trace the flow, compare repos), `editor` (update docs, fix lint, scaffold, add a field/route/page). `RULES_LITE` names the verifier; the explore note tells the main session to hand checks to it. Why: the real test showed cost is cache reads (about 118k context x 32 calls), so work that can leave the main context on Haiku should.
+- `plugins/auto-route/hooks/route.test.ts`, `README.md`, `.claude-plugin/plugin.json` (0.5.3): tests for the new picks, table row, version.
+
 
 ### auto-route 0.5.2: route repo-recon build tasks to explore
 - `plugins/auto-route/hooks/register.ts` (ROUTES `explore` row): also matches a `github.com/<user>` link and "inspect/analyze/survey/examine/investigate ... repo/repositories/profile/codebase". Why: the real-test prompt ("Analyze my public GitHub profile and repositories ... Build a website") matched no row, so the full rules never loaded and nothing was delegated.

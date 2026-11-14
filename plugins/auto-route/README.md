@@ -14,6 +14,7 @@ A model-routing plugin for Claude Code. It works on its own: no other plugin is 
 | Read a guide, post, doc page or link | `auto-route:reader` | haiku |
 | Locate code: "where is X", "what calls Y" | `auto-route:searcher` | haiku |
 | Broad sweep across many files, or inspecting a GitHub profile or repos before a build; one subagent per repo, facts with quoted lines | `auto-route:explore` | haiku |
+| Run build, lint, typecheck or tests; report pass or fail with the error lines | `auto-route:verifier` | haiku |
 | Bounded edit: rename, known-cause bug, boilerplate, tests | `auto-route:editor` | sonnet |
 | Anything else | main session | session model |
 
