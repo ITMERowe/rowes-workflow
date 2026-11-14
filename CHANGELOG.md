@@ -3,6 +3,11 @@
 Code changes, newest first: each file and section, what changed and why.
 
 ## 2026-11-14 (uncommitted)
+### auto-route 0.5.5: Haiku rows actually run on Haiku
+- `plugins/auto-route/hooks/register.ts` (new `agent.spawn` hook): a spawn of a Haiku or Sonnet row (`auto-route:explore`, `reader`, `searcher`, `verifier`, `editor`) with no model named, and not a fork, gets the table's model. Why: the V4 run launched 5 background `auto-route:explore` agents on Sonnet (usage: Sonnet 100%, explore 48% of the limit, $2.47). A plugin agent's own `model:` is not applied to a background run, and hideout's `routeModel` deliberately skips `auto-route:*` on the assumption that it is. V2 only got Haiku because the main session passed `model: haiku` by hand.
+- Same file: `RULES_LITE` says to pass the row's model as the Agent `model`; the survey note allows at most 3 subagents (group small repos). Why: backstop for the hook, and 5 cold starts cost more than 3.
+- `plugins/auto-route/hooks/route.test.ts`, `.claude-plugin/plugin.json` (0.5.5): spawn test (explore and verifier get haiku, editor sonnet, heavy untouched, an explicit model or a fork left alone).
+
 ### hideout 3.0.2: two more house rules
 - `plugins/hideout/hooks/register.tsx` (`HOUSE_RULES`): no dependency upgrades or audit chasing unless the task asks or the build fails; batch tool steps (browser_batch) in one call. `.claude-plugin/plugin.json` 3.0.2. Why: V2 spent 5 calls upgrading Astro and running npm audit, and 6 calls on one-step browser actions; at about 85k context each call re-reads about $0.02.
 

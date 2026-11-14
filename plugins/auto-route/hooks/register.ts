@@ -41,7 +41,7 @@ ${ROUTES.map(r => `| ${r.work} | \`${r.agent}\` | ${r.model} |`).join('\n')}
 // The standing part in the system prompt: a session that never delegates pays for these few lines, not the table.
 // The full RULES ride along once, with the first note that names a routing row.
 export const RULES_LITE = `## Routing (auto-route)
-Standing request from the user: use the \`auto-route:*\` subagents when a task matches: searcher, explore, reader (haiku) for finding and reading; editor (sonnet) for bounded edits; verifier (haiku) for running builds and tests; heavy, reviewer (opus) for hard or risky work. Delegate only when it saves context or money, or needs a stronger model; a job under ~20k tokens of reading or output stays here, and bigger reads go to subagents in parallel. The full table comes with the first prompt note that names a row.`
+Standing request from the user: use the \`auto-route:*\` subagents when a task matches: searcher, explore, reader (haiku) for finding and reading; editor (sonnet) for bounded edits; verifier (haiku) for running builds and tests, always passing the row's model as the Agent \`model\`; heavy, reviewer (opus) for hard or risky work. Delegate only when it saves context or money, or needs a stronger model; a job under ~20k tokens of reading or output stays here, and bigger reads go to subagents in parallel. The full table comes with the first prompt note that names a row.`
 
 // A prompt that only asks to read something: a link or a guide, post or doc, and no word that changes code.
 const READ_VERB = /\b(read|summari[sz]e|tl;?dr|skim|explain|what does|what's in|go through|check out|look at)\b/i
@@ -109,7 +109,7 @@ export const routeNote = (text: string, hinted: Set<string> = new Set()): string
   if (r?.agent === A('reader'))
     lines.push('auto-route: this ask only reads a guide, post or link. Hand the reading to the `auto-route:reader` subagent (haiku) with the link or path and what to pull out, then relay its summary. Read it yourself only if it is one short local file.')
   else if (r)
-    lines.push(`auto-route: this ask matches the \`${r.agent}\` row (${r.model}): ${r.work}. ${survey ? '' : ' Delegate that part only if it needs over ~20k tokens of reading.'}${survey ? ' Per repo, gather: purpose; stack with versions; structure with wc -l of the main files; tests (framework, file count); CI; docs; commit count and date range (git rev-list --count, git log); notable decisions with file:line; known limits or hygiene problems; asset paths and sizes. Read it yourself only for a single small repo (under ~50 source files); with two or more repos, or a bigger one, use one subagent per repo, all in one message, briefed with this list and "facts as path:line plus quote, no opinions". Every claim you publish carries a file:line or a command count: count, never estimate. While subagents run, keep working on what does not need their results (set up the project, install, write code that does not depend on them); do not end the turn to wait. Before you finish, recheck about five published numbers against the source in one batched command and fix any mismatch. When the build is done, hand lint, type, test and build runs to `auto-route:verifier`; you still read each failure and fix it, and you do not claim done on its word without its exit lines.' : ''}`)
+    lines.push(`auto-route: this ask matches the \`${r.agent}\` row (${r.model}): ${r.work}. ${survey ? '' : ' Delegate that part only if it needs over ~20k tokens of reading.'}${survey ? ' Per repo, gather: purpose; stack with versions; structure with wc -l of the main files; tests (framework, file count); CI; docs; commit count and date range (git rev-list --count, git log); notable decisions with file:line; known limits or hygiene problems; asset paths and sizes. Read it yourself only for a single small repo (under ~50 source files); with two or more repos, or a bigger one, use at most 3 subagents (group small repos), all in one message, briefed with this list and "facts as path:line plus quote, no opinions". Every claim you publish carries a file:line or a command count: count, never estimate. While subagents run, keep working on what does not need their results (set up the project, install, write code that does not depend on them); do not end the turn to wait. Before you finish, recheck about five published numbers against the source in one batched command and fix any mismatch. When the build is done, hand lint, type, test and build runs to `auto-route:verifier`; you still read each failure and fix it, and you do not claim done on its word without its exit lines.' : ''}`)
   // Each skill is hinted once per session, and a plain question gets none: a repeat only adds context tokens.
   if (r && !hinted.has('rules')) {
     hinted.add('rules')
@@ -152,6 +152,14 @@ export const register: Register = (on, options) => {
   on('turn.complete', ($, e, next) => {
     moved.delete(e.turnId)
     return next(e)
+  })
+
+  // A plugin agent's own `model:` is not applied to a background run, so a Haiku row ran on Sonnet (the V4 test: explore on Sonnet, 48% of the limit).
+  // Set it here from the table, only where the caller named none and only for the cheap rows.
+  const CHEAP = new Map(ROUTES.filter(r => r.model === 'haiku' || r.model === 'sonnet').map(r => [r.agent, r.model]))
+  on('agent.spawn', (_, e, next) => {
+    const model = CHEAP.get(e.subagentType)
+    return next(model && !e.model && !e.fork ? { ...e, model } : e)
   })
 
   // The table goes to the session that can delegate: a subagent's request offers no Agent tool.
