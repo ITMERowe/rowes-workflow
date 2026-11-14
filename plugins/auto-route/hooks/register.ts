@@ -119,7 +119,9 @@ export const routeNote = (text: string, hinted: Set<string> = new Set()): string
   const lines: string[] = []
   const question = isQuestion(text)
   // A question asks about work, not for it: it may still go to a read-only agent, never to one that changes code.
-  const r = routeFor(text, question ? ROUTES.filter(x => READ_ONLY_ROWS.has(x.agent)) : ROUTES)
+  // A long brief names many risky-sounding words in passing (permissions, deletion): a keyword row on it misleads, so only a survey keeps its note.
+  const long = text.length > 600 && !(SURVEY.test(text) && MANY.test(text) && !asksOnly(text))
+  const r = long ? undefined : routeFor(text, question ? ROUTES.filter(x => READ_ONLY_ROWS.has(x.agent)) : ROUTES)
   const survey = r?.agent === A('explore') && SURVEY.test(text)
   if (r?.agent === A('reader'))
     lines.push('auto-route: this ask only reads a guide, post or link. Hand the reading to the `auto-route:reader` subagent (haiku) with the link or path and what to pull out, then relay its summary. Read it yourself only if it is one short local file.')

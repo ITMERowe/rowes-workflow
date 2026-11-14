@@ -85,6 +85,14 @@ Use `/usage` and compare two fresh sessions on the same job:
 
 Run each side two or three times: one run is noisy. For a scripted version, run `claude -p "<job>" --output-format json` and read `total_cost_usd` and `modelUsage` from the result.
 
+## Trim your starting context
+
+Every model call re-reads the whole starting context: system prompt, tools, skills, agents, rules. In a 49-call desktop build that starting context (about 80k tokens) was 35% of the bill, and auto-route's own part of it is about 2k tokens. Routing cannot shrink the rest; you can.
+
+1. Run `/context` in a fresh session and look at **Skills**, **MCP tools**, **Custom agents** and **Memory files**.
+2. Disable plugins and MCP servers you do not use in this project (`/plugin`). Each skill and agent adds its description to every call.
+3. Check again. Fewer tokens at the start save money on every call that follows.
+
 ## Credits
 
 The routing tiers come from [savvy-flow](https://github.com/JohnnyVizz/claude-kit) by JohnnyVizz: `heavy` and `fable` follow its savvy-heavy and savvy-fable workers. If [Hideout](https://github.com/ITMERowe/exiles/tree/main/plugins/hideout) is installed, its agents panel shows these agents with their models. Neither plugin is needed.

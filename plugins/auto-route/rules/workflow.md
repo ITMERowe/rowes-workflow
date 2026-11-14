@@ -27,3 +27,9 @@ Test for any file: would someone who clones the repo need it to install, build, 
 - Ship every new project or feature with at least one automated check that can fail, using the stack's own tools: a test runner, a linter or type checker, or a check on the built output (links, assets, schema, exit codes). If the project has none, add the smallest one, run it, and report only the results you actually saw.
 - Use dependency versions that install and build cleanly. Do not upgrade packages or chase audit advisories unless the task asks or the build fails; note a known advisory in the handoff instead.
 - When a tool can batch steps (for example a browser tool's batch call), send them in one call instead of one call per step.
+
+## Verification budget
+- Run the whole test suite once per batch of changes, not after every edit. Read the full failure output and fix everything it names before running again.
+- Check a UI through text first: accessibility tree, DOM, logs, exit codes. Take at most 2 screenshots per theme or view and never re-read an image you already looked at; each image stays in the context for every later call.
+- Close stale app and server processes before each UI test run.
+- When the checks the task requires pass, stop adding tests and list what was not tested. Unit tests for edge cases that guard against data loss are always worth keeping.
