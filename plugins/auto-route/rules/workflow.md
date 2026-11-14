@@ -32,4 +32,10 @@ Test for any file: would someone who clones the repo need it to install, build, 
 - Run the whole test suite once per batch of changes, not after every edit. Read the full failure output and fix everything it names before running again.
 - Check a UI through text first: accessibility tree, DOM, logs, exit codes. Take at most 2 screenshots per theme or view and never re-read an image you already looked at; each image stays in the context for every later call.
 - Close stale app and server processes before each UI test run.
+- When the work is built and was large (dozens of files), run the end-to-end verification and packaging in a fresh context: spawn `auto-route:inspector` with the build command, the required checks, how to run the app and the task's requirements. It returns defects; you fix them and ask again only for what changed. A call late in a long session re-reads 200k tokens, a fresh agent starts near 40k.
 - When the checks the task requires pass, stop adding tests and list what was not tested. Unit tests for edge cases that guard against data loss are always worth keeping.
+
+## UI work
+- At the default window size no card or control wraps alone onto its own row, and nothing overlaps or clips.
+- An empty state sits inside its component and never covers a header or a control.
+- Controls look the same in light and dark themes; check both, and the smallest supported size.
