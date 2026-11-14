@@ -9,6 +9,35 @@
 | What it does | Sends each job to the cheapest model that can do it | Shows every agent live, as a pixel crab in a tavern |
 | You get | Haiku for search, Sonnet for edits, Opus for risky work | A band above the prompt, plus a crew panel (`/agents-info`) |
 
+> **Same job, 20% cheaper, a better result.** Building a 7-repository portfolio site, auto-route cost **$0.89 against $1.11** for plain Claude Code, read **a third fewer tokens**, and shipped a 13-page static site where every engineering decision cites its file and line. [See the numbers](#status-v7-baseline).
+
+## Status: v7 baseline
+
+auto-route 0.5.9 and Hideout 3.0.6 are the **v7 baseline**. Behavior stays as it is until a second kind of project has been tested.
+
+**What was measured.** One task, run once per version in Claude Code on Sonnet 5.5: build a developer portfolio from a public GitHub profile with 7 repositories.
+
+| Same job, same model (Sonnet 5.5) | Plain Claude Code | auto-route v7 | Difference |
+|---|---|---|---|
+| Cost | $1.11 | **$0.89** | **20% less** |
+| Tokens read from cache | 3.0M | **2.0M** | **a third fewer** |
+| Site built | 1 page, 25 KB of JavaScript | **13 pages, 0 KB of JavaScript** | static, indexable |
+| Decisions citing `file:line` | 0 | **all of them** | checkable |
+| Quality (my rubric, out of 35) | 25 | **32** | +7 points |
+
+Quality was scored on verifiable facts, coverage, SEO, checks, design, performance and docs. Seven versions of the setup were run; the six before v7 cost between $0.97 and $1.42, and one earlier run that put the explore agents on the wrong model cost $2.47 (fixed since).
+
+**What produced it.**
+- Reading many repos goes to Haiku agents. A gate refuses the main session's own clone or repo-file fetch on a multi-repo survey until an explore agent has been spawned.
+- Those agents read in few calls and return short, terse reports with `file:line` evidence.
+- The workflow rules ship with auto-route: ship a check that can fail, pick the lightest stack, no dependency chasing, count instead of estimating.
+
+**Read this before trusting the numbers.**
+- Each version ran once on one web task. Runs of nearly the same setup varied by about 30%, so treat the gap as a signal, not a guarantee.
+- The quality scores are the author's judgment, not an independent review.
+- About two thirds of the cost is the starting context (your installed plugins, skills and agents), which routing cannot shrink. Removing what you do not use saves more.
+- Not tested: CLI, mobile or backend projects, an Opus or Fable main session, macOS and Linux.
+
 ## Install
 
 In Claude Code, one line at a time:
