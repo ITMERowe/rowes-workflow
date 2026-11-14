@@ -1,42 +1,18 @@
 # Exiles
 
-**Stop paying Opus prices for grep.** Two Claude Code plugins: one sends every job to the right model, the other lets you watch your crew work.
+**Stop paying Opus prices for grep.**
+
+Two Claude Code plugins that make agent work cheaper and easier to watch. **auto-route** sends each job to the cheapest model that can do it. **Hideout** shows every agent working, live, as a pixel crab in a tavern.
 
 <p align="center"><img src="docs/crew.svg" alt="The crab crew: Tactician, Pathfinder, Ritualist, Martial Artist, Gladiator, Stormweaver, Chronomancer and Exile, each acting out its job" width="880"></p>
 
-| | **auto-route** | **Hideout** |
-|---|---|---|
-| What it does | Sends each job to the cheapest model that can do it | Shows every agent live, as a pixel crab in a tavern |
-| You get | Haiku for search, Sonnet for edits, Opus for risky work | A band above the prompt, plus a crew panel (`/agents-info`) |
+| **20% cheaper** | **A third fewer tokens read** | **Delegation that actually happens** |
+|:---:|:---:|:---:|
+| $0.89 vs $1.11 for the same build | 2.0M vs 3.0M cache reads | 3 of 3 runs with the hook, 2 of 4 as a prompt rule |
 
-> **Agents do not cost what they write. They cost what they re-read.** In a full build, 98% of the tokens processed were cached context read or written again on every call, not new output. auto-route cuts that bill by sending the reading to Haiku, and it *enforces* it with a hook, because a prompt rule alone was followed in only 2 of 4 runs. Same job, same model: **$0.89 against $1.11**, a third fewer tokens read. [See the numbers](#status-tested-baseline).
+> **Agents do not cost what they write. They cost what they re-read.** In a full build, 98% of the tokens processed were cached context read again on every call. auto-route keeps the bulk reading out of that context by sending it to Haiku, and it *enforces* that with a hook, because asking the model to delegate worked only half the time.
 
-## Status: tested baseline
-
-auto-route 0.5.9 and Hideout 3.0.6 are the **tested baseline**: the versions that produced the numbers below. Behavior stays as it is until a second kind of project has been tested.
-
-**What was measured.** One task, run once per build in Claude Code on Sonnet 5.5: build a developer portfolio from a public GitHub profile with 7 repositories.
-
-| Same job, same model (Sonnet 5.5) | Plain Claude Code | auto-route 0.5.9 | Difference |
-|---|---|---|---|
-| Cost | $1.11 | **$0.89** | **20% less** |
-| Tokens read from cache | 3.0M | **2.0M** | **a third fewer** |
-| Site built | 1 page, content rendered by JavaScript | **13 static pages** | indexable, no JavaScript needed to read it |
-| Decisions citing `file:line` | 0 | **all of them** | checkable |
-| Quality (my rubric, out of 35) | 25 | **32** | +7 points |
-
-Quality was scored on verifiable facts, coverage, SEO, checks, design, performance and docs. Seven builds of the setup were run in order; the six before this one cost between $0.97 and $1.42, and one earlier run that put the explore agents on the wrong model cost $2.47 (fixed since).
-
-**What produced it.**
-- Reading many repos goes to Haiku agents. A gate refuses the main session's own clone or repo-file fetch on a multi-repo survey until an explore agent has been spawned. As a prompt rule this was followed in 2 of 4 runs; with the gate, 3 of 3.
-- Those agents read in few calls and return short, terse reports with `file:line` evidence.
-- The workflow rules ship with auto-route: ship a check that can fail, pick the lightest stack, no dependency chasing, count instead of estimating.
-
-**Read this before trusting the numbers.**
-- Each build ran once on one web task. Runs of nearly the same setup varied by about 30%, so treat the gap as a signal, not a guarantee.
-- The quality scores are the author's judgment, not an independent review.
-- About two thirds of the cost is the starting context (your installed plugins, skills and agents), which routing cannot shrink. Removing what you do not use saves more.
-- Not tested: CLI, mobile or backend projects, an Opus or Fable main session, macOS and Linux.
+*One task (build a portfolio site from 7 GitHub repos), same model, one run per build. [Method, every run and the limits →](docs/BENCHMARK.md)*
 
 ## Install
 
@@ -50,6 +26,20 @@ In Claude Code, one line at a time:
 ```
 
 Each plugin works alone, so install just one if you like. From a terminal, run the same lines as `claude plugin ...`.
+
+## What you get
+
+| | **auto-route** | **Hideout** |
+|---|---|---|
+| What it does | Sends each job to the cheapest model that can do it | Shows every agent live, as a pixel crab in a tavern |
+| You get | Haiku for search, Sonnet for edits, Opus for risky work | A band above the prompt, plus a crew panel (`/agents-info`) |
+
+**How auto-route saves money**
+- **Reading goes to Haiku.** A survey of many repositories runs in Haiku agents that return short, cited reports, so the main session never carries the bulk.
+- **A hook enforces it.** The main session's own clone of a repository is refused until the reading agents have been spawned.
+- **One set of rules from the plugin.** Ship a check that can fail, pick the lightest stack, count instead of estimating, keep AI notes out of the repo. Nothing depends on your own `CLAUDE.md`.
+
+**What the test built.** The same brief produced a 13-page static portfolio where every engineering decision cites a file and a line, against a single page rendered by JavaScript. Quality scored 32 out of 35 against 25, by the author's rubric: see the [benchmark](docs/BENCHMARK.md).
 
 ## auto-route
 
