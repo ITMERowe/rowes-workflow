@@ -124,9 +124,27 @@ const PACKAGING = /\b(dotnet publish|\.msi\b|wix|inno ?setup|iscc|iexpress|maken
 const VERIFY = /\b(dotnet test|npm (run )?(test|verify|e2e)|pnpm (run )?(test|verify)|yarn (run )?(test|verify)|npx (vitest|jest|playwright)|vitest|jest|pytest|go test|cargo test|gradlew? +(test|check)|mvn +(verify|test)|ctest|make +(test|check)|phpunit|rspec|flutter test)\b|\b(verify|smoke|e2e)[-_a-z0-9]*\.(ps1|sh|py|mjs|js|cmd)\b/i
 const DOCS = /(^|[\\/])(README|ARCHITECTURE|CONTRIBUTING|USAGE|INSTALL|CHANGELOG|HANDOFF)\.md$|(^|[\\/])docs[\\/].+\.md$/i
 
-/** The late-phase agent a shell command belongs to, if any. */
-export const phaseOfCommand = (command: string): string | undefined =>
-  PACKAGING.test(command) ? A('packager') : VERIFY.test(command) ? A('inspector') : undefined
+// Running the app that was just built, or taking a screenshot of it, is verification too (the V9 build checked itself with `--selftest` and screenshots).
+const BUILT_EXE = /^(start-process\b|start\b|call\b|&\s*)?\s*["']?([^\s"']*[\\/])?(bin|publish|dist|out|release|debug|build|target)[\\/][^\s"']*\.(exe|app)\b|--self-?test\b/i
+const SCREENSHOT = /CopyFromScreen|\bscreencapture\b|\bscrot\b|Save-?Screenshot|--screenshot\b/i
+// A command that only looks at things or runs an inline script: words in its text (a script mentioning "wix", a grep for "jest") say nothing about what it runs.
+const ANALYSIS = /^(grep|egrep|rg|ag|cat|head|tail|sed|awk|ls|dir|find|wc|echo|type|printf|git|stat|du|diff|cmp|sort|uniq|cut|tr|file|get-content|get-childitem|get-item|select-string|measure-object|write-output|write-host|test-path|cd|pushd|popd|mkdir|cp|copy|mv|move|rm|del)\b|^(node|nodejs)\s+(-e|--eval|-p|--print)\b|^(python3?|py)\s+(-c\b|-(\s|$))/i
+
+/** The late-phase agent a shell command belongs to, if any. Splits the command into its parts and ignores a heredoc body and analysis-only parts. */
+export const phaseOfCommand = (command: string): string | undefined => {
+  const head = command.replace(/<<-?\s*['"]?\w+[\s\S]*$/, '')
+  for (const part of head.split(/&&|\|\||;|\||\r?\n/)) {
+    const s = part.trim()
+    if (!s || ANALYSIS.test(s)) continue
+    if (PACKAGING.test(s)) return A('packager')
+    if (VERIFY.test(s) || BUILT_EXE.test(s) || SCREENSHOT.test(s)) return A('inspector')
+  }
+  return undefined
+}
+
+const IMAGE = /\.(png|jpe?g|webp|gif|bmp)$/i
+/** True for an image file path (a screenshot the main session would read into its context). */
+export const isImagePath = (path: string): boolean => IMAGE.test(path)
 
 /** True for a documentation path the documenter owns. */
 export const isDocPath = (path: string): boolean => DOCS.test(path)
@@ -249,4 +267,11 @@ export const register: Register = (on, options) => {
     on('tool.call', { tool }, ($, e, next) => (e.agentId ? next(e) : lateDeny(phaseOfCommand(String(e.command))) ?? next(e)))
   for (const tool of ['Write', 'Edit'] as const)
     on('tool.call', { tool }, ($, e, next) => (e.agentId || !isDocPath(String(e.file_path)) ? next(e) : lateDeny(A('documenter')) ?? next(e)))
+  // An image read into the main context stays there for every later call. After the second one, in a late session, reviewing screenshots goes to the inspector.
+  let imageReads = 0
+  on('tool.call', { tool: 'Read' }, ($, e, next) => {
+    if (e.agentId || !isImagePath(String(e.file_path))) return next(e)
+    imageReads++
+    return (imageReads > 2 ? lateDeny(A('inspector')) : undefined) ?? next(e)
+  })
 }

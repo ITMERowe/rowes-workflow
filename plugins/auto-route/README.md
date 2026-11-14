@@ -88,7 +88,7 @@ Use `/usage` and compare two fresh sessions on the same job:
 
 Run each side two or three times: one run is noisy. For a scripted version, run `claude -p "<job>" --output-format json` and read `total_cost_usd` and `modelUsage` from the result.
 
-**Late phases.** Past about 150k tokens of main context every call re-reads all of it, so packaging, end-to-end checks and documentation are refused in the main session until `packager`, `inspector` or `documenter` has been spawned for them. The refusal gives way after two tries. Below that size nothing changes.
+**Late phases.** Past about 150k tokens of main context every call re-reads all of it, so packaging, end-to-end checks and documentation are refused in the main session until `packager`, `inspector` or `documenter` has been spawned for them. That includes running the freshly built app or its self-test, taking a screenshot, and reading a third image. A command that only looks at things or runs an inline script (`grep`, `cat`, `node -e`, a heredoc) is never refused for the words it contains. The refusal gives way after two tries. Below that size nothing changes.
 
 ## Trim your starting context
 
