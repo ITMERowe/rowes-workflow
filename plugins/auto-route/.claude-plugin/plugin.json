@@ -1,6 +1,6 @@
 {
   "name": "auto-route",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Routes Claude Code by the ask: a routing table and agents for subagent work, and simple questions moved to Haiku or Sonnet.",
   "author": {
     "name": "ITMERowe"

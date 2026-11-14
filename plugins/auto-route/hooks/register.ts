@@ -15,7 +15,7 @@ export const ROUTES: Route[] = [
   { agent: A('heavy'), model: 'opus', work: 'Messy code, root-cause debugging, multi-file change with invariants', test: /\b(root cause|why does .{0,40}(fail|break|crash)|flaky|intermittent|keeps (failing|breaking|happening)|still (broken|shows|fails)|messy|legacy|across (the )?(codebase|files|modules))\b/i },
   { agent: A('reader'), model: 'haiku', work: 'Read a guide, post, doc page or link and report what it says' },
   { agent: A('searcher'), model: 'haiku', work: 'Locate code, "where is X", "what calls Y", map a folder', test: /\b(where (is|are|'s)|what calls|who calls|which file|find (the )?(definition|usages?|uses|callers)|list (all )?(the )?uses|locate)\b/i },
-  { agent: A('explore'), model: 'haiku', work: 'Broad sweep across many files, conclusion only', test: /\b(map (the|this|our) (repo|codebase|project)|overview of (the|this) (code|repo|codebase)|how does .{0,40} work|sweep|everywhere (we|it|that))\b/i },
+  { agent: A('explore'), model: 'haiku', work: 'Broad sweep across many files, conclusion only', test: /\b(map (the|this|our) (repo|codebase|project)|overview of (the|this) (code|repo|codebase)|how does .{0,40} work|sweep|everywhere (we|it|that))\b|github\.com\/[\w-]+|\b(inspect|analy[sz]e|survey|examine|investigate)\b.{0,50}\b(repos?|repositor(y|ies)|profile|codebase)\b/i },
   { agent: A('editor'), model: 'sonnet', work: 'Bounded edit with clear spec: rename, known-cause bug, boilerplate, tests', test: /\b(rename|typo|boilerplate|bump (the )?version|add (a |the )?tests?|write tests?|swap .{0,30} for)\b/i },
 ]
 
@@ -40,7 +40,7 @@ ${ROUTES.map(r => `| ${r.work} | \`${r.agent}\` | ${r.model} |`).join('\n')}
 // The standing part in the system prompt: a session that never delegates pays for these few lines, not the table.
 // The full RULES ride along once, with the first note that names a routing row.
 export const RULES_LITE = `## Routing (auto-route)
-Standing request from the user: use the \`auto-route:*\` subagents when a task matches: searcher, explore, reader (haiku) for finding and reading; editor (sonnet) for bounded edits; heavy, reviewer (opus) for hard or risky work. Delegate only when it saves context or money, or needs a stronger model; a job under ~3 tool calls stays here. The full table comes with the first prompt note that names a row.`
+Standing request from the user: use the \`auto-route:*\` subagents when a task matches: searcher, explore, reader (haiku) for finding and reading; editor (sonnet) for bounded edits; heavy, reviewer (opus) for hard or risky work. Delegate only when it saves context or money, or needs a stronger model; a job under ~3 tool calls stays here, but reading more than ~3 files, repos or pages goes to subagents in parallel, never inline. The full table comes with the first prompt note that names a row.`
 
 // A prompt that only asks to read something: a link or a guide, post or doc, and no word that changes code.
 const READ_VERB = /\b(read|summari[sz]e|tl;?dr|skim|explain|what does|what's in|go through|check out|look at)\b/i
@@ -104,7 +104,7 @@ export const routeNote = (text: string, hinted: Set<string> = new Set()): string
   if (r?.agent === A('reader'))
     lines.push('auto-route: this ask only reads a guide, post or link. Hand the reading to the `auto-route:reader` subagent (haiku) with the link or path and what to pull out, then relay its summary. Read it yourself only if it is one short local file.')
   else if (r)
-    lines.push(`auto-route: this ask matches the \`${r.agent}\` row (${r.model}): ${r.work}. Delegate that part unless it fits in ~3 tool calls here.`)
+    lines.push(`auto-route: this ask matches the \`${r.agent}\` row (${r.model}): ${r.work}. Delegate that part unless it fits in ~3 tool calls here.${r.agent === A('explore') ? ' Fan out: one subagent per repo or area, in one message, each returning facts as path plus quoted line with no opinions; you choose and write, and check each claim against its quote.' : ''}`)
   // Each skill is hinted once per session, and a plain question gets none: a repeat only adds context tokens.
   if (r && !hinted.has('rules')) {
     hinted.add('rules')

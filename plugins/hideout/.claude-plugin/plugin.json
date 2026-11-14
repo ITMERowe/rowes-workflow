@@ -1,6 +1,6 @@
 {
   "name": "hideout",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "Your crew's hideout in Claude Code: a band above the prompt (plan progress and usage left) and a crew panel (/agents-info): every subagent as a pixel crab, background tasks, the task list, cost and tokens, and the skills and plugins in use.",
   "dependencies": [
     "ponytail@ponytail"

@@ -56,8 +56,8 @@ Progress reporting: before any other work, call \`${STEP_TOOL}\` with \`total\` 
 const PANE = 'hideout-agents'
 export const HOUSE_RULES = `## Code changes
 - Before the first code edit in a session, invoke the ponytail:ponytail skill; follow it for every change.
-- After changing code, add an entry at the top of CHANGELOG.md at the repo root (create it if missing): today's date, then each changed file and section with one line on what and why. In chat, link the entry instead of repeating it.
-- After changing code, update HANDOFF.md at the repo root (create it if missing): what changed and what is left, and delete anything no longer true or relevant.`
+- Once per task, when its code changes are done (not after each edit), add an entry at the top of CHANGELOG.md at the repo root (create it if missing): today's date, then each changed file and section with one line on what and why. In chat, link the entry instead of repeating it.
+- In the same pass, update HANDOFF.md at the repo root (create it if missing): what changed and what is left, and delete anything no longer true or relevant. Write both in one edit each.`
 
 // shortcut: a desktop row is the code font's line height, about 20 px measured; read it from the surface if one ever reports it.
 export const ROW_PX = 20

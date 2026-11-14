@@ -2,13 +2,51 @@
 
 Code changes, newest first: each file and section, what changed and why.
 
-## 2026-11-13
+## 2026-11-14 (uncommitted)
+
+### auto-route 0.5.2: route repo-recon build tasks to explore
+- `plugins/auto-route/hooks/register.ts` (ROUTES `explore` row): also matches a `github.com/<user>` link and "inspect/analyze/survey/examine/investigate ... repo/repositories/profile/codebase". Why: the real-test prompt ("Analyze my public GitHub profile and repositories ... Build a website") matched no row, so the full rules never loaded and nothing was delegated.
+- Same file (`routeNote`): the `explore` note adds a fan-out line: one subagent per repo, in one message, facts as path plus quoted line, no opinions; the main session writes and checks each claim against its quote. Why: Haiku extracts well but should not judge or invent.
+- Same file (`RULES_LITE`): reading more than ~3 files, repos or pages goes to subagents in parallel. Why: the standing text only said small jobs stay inline.
+- `plugins/auto-route/agents/explore.md`: may `git clone --depth 1` a remote repo into a new temp folder. Why: read-only Bash alone could not reach a remote repo.
+- `plugins/auto-route/hooks/route.test.ts`: new test with the portfolio prompt shape; added `rename these repositories` stays on `editor`.
+
+### hideout 3.0.1: house rules log once per task
+- `plugins/hideout/hooks/register.tsx` (`HOUSE_RULES`): CHANGELOG.md and HANDOFF.md are updated once when the task's code changes are done, one edit each, not after every change. Why: the real test (Exiles run, $1.42 vs $1.11) wrote both files into a new project, and "after changing code" invites a rewrite per edit, which costs turns and cache writes.
+
+## 2026-11-13 (uncommitted)
 
 ### hideout: band count and width
 - `plugins/hideout/hooks/register.tsx` (AbovePrompt): the "N agents" count now counts running and planned agents only, not finished ones. Why: finished agents stayed in the count.
 - Same file: band width is `cols * 7.5` minus a reserve sized from the count label and dismiss button, not a fixed 8 px per column minus 128. Why: the old guess clipped the label ("3 agent") and did not follow width changes.
 
-## 2026-11-13 (uncommitted)
+### bench: heavy suite and clean-profile mode
+- `bench/tasks.mjs`, `bench/run.mjs`: `SUITE=heavy` runs five read-heavy prompts (`survey-lib`, `survey-router`, `audit-deprecate`, `trace-flow`, `jsdoc`) whose answers are checked against the fixture; the default suite is unchanged. Why: the standard tasks are one-grep jobs, so delegation can never pay there.
+- `bench/tasks.mjs`, `bench/run.mjs`, `bench/portfolio-fixture/`: `SUITE=portfolio` runs two website jobs on a snapshot of the ITMERowe public GitHub profile (profile.json, 7 repo READMEs, a deliberately poor index.html): `portfolio-prep` (read the profile, write portfolio.json and portfolio.html) and `site-improve` (responsive, accessible, semantic rewrite). Graded by checks on the output files; each run gets a fresh copy of the folder (`t.dir`). Suites are now `standard`, `heavy`, `portfolio`.
+- `bench/arms.mjs`: `BENCH_PROFILE=<empty folder>` sets `CLAUDE_CONFIG_DIR` for every call (no `CLAUDE.md`, no other plugins); arm plugins load via `--plugin-dir`. `run.mjs`/`session.mjs` use the new `armArgs`/`armEnv`. Why: the usual profile's `CLAUDE.md` already makes answers terse, so the baseline was not bare.
+- `bench-portable.zip` (repo root, local): the bench scripts for running the baseline on a second machine.
+
+### bench: fixes after the first long-session run
+- `bench/session.mjs`: the edits check treated `git grep` finding nothing (exit 1) as a failure, so every session read "EDITS WRONG"; it now checks the exit status.
+- `bench/run.mjs`: `TASK=<id>` runs one task only (cheap per-plugin probes).
+
+### bench: long-session test
+- `bench/session.mjs` (local): one 10-turn session per run, turns chained with `--resume`, arms `none,all,lean`; prints median cumulative cost after each turn so a crossover (plugin overhead paid back over time) shows, plus subagents spawned and whether the two edits landed. Why: single-shot runs pay the fixed plugin cost every time, so they cannot show a long-run win.
+- `bench/arms.mjs` (new): arm settings moved out of `run.mjs` so both scripts share them; `tasks.mjs` now exports `loadUtils`.
+
+### bench: resumable runs
+- `bench/run.mjs`: stops at once on a "hit your limit" error instead of recording failures, and `RESUME=<results file>` copies the good rows into a new file and runs only the missing cells. Why: the first full run hit the 5-hour limit after 18 runs and recorded 30 zero-cost failures.
+
+### bench: manual test scored from /usage
+- `bench/manual/PROTOCOL.md`, `results.csv`, `compare.mjs` (local): `/usage` cannot be scripted, so runs are done by hand in fresh sessions (same fixture and tasks as `bench/run.mjs`), the Breakdown rows are pasted into the CSV, and `compare.mjs` prints median cost per task, the cost ratio, and the per-model table. The CSV ships empty: no sample numbers.
+
+### auto-route README: test it yourself
+- `plugins/auto-route/README.md`: new "Test it yourself" section: compare two fresh sessions with `/usage`, with the plugin disabled and enabled, on a multi-step job. Why: `/usage` is what people will use, and a one-line job shows no saving.
+
+### auto-route: ADHD rules defer to caveman
+- `plugins/auto-route/rules/adhd.md`, new `rules/adhd-words.md`: split the shape rules (action first, numbered steps, one next action) from the word-level rules (no openers, 5-line length, terse words). Why: the readers of caveman, ponytail and i-have-adhd showed all three save by shortening output, and stacking three style rule sets pays the input cost three times for one effect.
+- `plugins/auto-route/hooks/adhd.mjs`: injects `adhd-words.md` only when no `caveman@*` plugin is enabled in `~/.claude/settings.json`. Checked: with caveman on, the injected text is 1,794 chars and has no Words section.
+- `bench/` (local): arms are now plugin sets (`none`, `ponytail`, `caveman`, `route`, `all`, `lean`) built at run time; added `write-fn` (graded by running the function) and `explain` (long answer) tasks; `report.mjs` adds output tokens and a bootstrap 95% interval on the geometric-mean cost ratio. Old results still read (`off` is the baseline when `none` is absent). `run.mjs` also keeps each run's per-model usage (`byModel`) and `report.mjs` prints an arm-by-model table (input, output, cache read, cache write, cost) like `/usage`, so Haiku offloading is visible; runs from before this change have no `byModel`.
 
 ### auto-route: lean variant (untested against the benchmark)
 - `plugins/auto-route/hooks/register.ts` (`RULES`): shorter wording, same table and rules and same "saves context or money, or needs a stronger model" test (an added "never delegate to a costlier model" was reverted: it would block `heavy` and `reviewer` from Sonnet sessions).

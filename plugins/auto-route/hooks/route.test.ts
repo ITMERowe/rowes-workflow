@@ -100,6 +100,13 @@ test('the README examples route where it says', () => {
   expect(note('rework the readme so it is easier to read')).not.toContain('auto-route:reader')
 })
 
+test('a build task that starts by inspecting GitHub repos fans recon out to explore', () => {
+  const t = 'Analyze my public GitHub profile and repositories: https://github.com/ITMERowe. Build a portfolio website.'
+  expect(routeFor(t)?.agent).toBe('auto-route:explore')
+  expect(routeNote(t)).toContain('one subagent per repo')
+  expect(routeFor('rename these repositories')?.agent).toBe('auto-route:editor')
+})
+
 test('judging code gets ponytail; plain code work gets no hint, and a skill is hinted once', () => {
   expect(skillsFor('implement a retry helper')).toEqual([])
   const hinted = new Set<string>()
