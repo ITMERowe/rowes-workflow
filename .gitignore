@@ -18,4 +18,3 @@ Screenshot *.png
 *.test.tsx
 docs/hideout-tavern-plan.md
 tsconfig.json
-plugins/hideout/types/
