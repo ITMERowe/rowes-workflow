@@ -9,15 +9,15 @@
 | What it does | Sends each job to the cheapest model that can do it | Shows every agent live, as a pixel crab in a tavern |
 | You get | Haiku for search, Sonnet for edits, Opus for risky work | A band above the prompt, plus a crew panel (`/agents-info`) |
 
-> **Agents do not cost what they write. They cost what they re-read.** In a full build, 98% of the tokens processed were cached context read or written again on every call, not new output. auto-route cuts that bill by sending the reading to Haiku, and it *enforces* it with a hook, because a prompt rule alone was followed in only 2 of 4 runs. Same job, same model: **$0.89 against $1.11**, a third fewer tokens read. [See the numbers](#status-v7-baseline).
+> **Agents do not cost what they write. They cost what they re-read.** In a full build, 98% of the tokens processed were cached context read or written again on every call, not new output. auto-route cuts that bill by sending the reading to Haiku, and it *enforces* it with a hook, because a prompt rule alone was followed in only 2 of 4 runs. Same job, same model: **$0.89 against $1.11**, a third fewer tokens read. [See the numbers](#status-tested-baseline).
 
-## Status: v7 baseline
+## Status: tested baseline
 
-auto-route 0.5.9 and Hideout 3.0.6 are the **v7 baseline**. Behavior stays as it is until a second kind of project has been tested.
+auto-route 0.5.9 and Hideout 3.0.6 are the **tested baseline**: the versions that produced the numbers below. Behavior stays as it is until a second kind of project has been tested.
 
-**What was measured.** One task, run once per version in Claude Code on Sonnet 5.5: build a developer portfolio from a public GitHub profile with 7 repositories.
+**What was measured.** One task, run once per build in Claude Code on Sonnet 5.5: build a developer portfolio from a public GitHub profile with 7 repositories.
 
-| Same job, same model (Sonnet 5.5) | Plain Claude Code | auto-route v7 | Difference |
+| Same job, same model (Sonnet 5.5) | Plain Claude Code | auto-route 0.5.9 | Difference |
 |---|---|---|---|
 | Cost | $1.11 | **$0.89** | **20% less** |
 | Tokens read from cache | 3.0M | **2.0M** | **a third fewer** |
@@ -25,7 +25,7 @@ auto-route 0.5.9 and Hideout 3.0.6 are the **v7 baseline**. Behavior stays as it
 | Decisions citing `file:line` | 0 | **all of them** | checkable |
 | Quality (my rubric, out of 35) | 25 | **32** | +7 points |
 
-Quality was scored on verifiable facts, coverage, SEO, checks, design, performance and docs. Seven versions of the setup were run; the six before v7 cost between $0.97 and $1.42, and one earlier run that put the explore agents on the wrong model cost $2.47 (fixed since).
+Quality was scored on verifiable facts, coverage, SEO, checks, design, performance and docs. Seven builds of the setup were run in order; the six before this one cost between $0.97 and $1.42, and one earlier run that put the explore agents on the wrong model cost $2.47 (fixed since).
 
 **What produced it.**
 - Reading many repos goes to Haiku agents. A gate refuses the main session's own clone or repo-file fetch on a multi-repo survey until an explore agent has been spawned. As a prompt rule this was followed in 2 of 4 runs; with the gate, 3 of 3.
@@ -33,7 +33,7 @@ Quality was scored on verifiable facts, coverage, SEO, checks, design, performan
 - The workflow rules ship with auto-route: ship a check that can fail, pick the lightest stack, no dependency chasing, count instead of estimating.
 
 **Read this before trusting the numbers.**
-- Each version ran once on one web task. Runs of nearly the same setup varied by about 30%, so treat the gap as a signal, not a guarantee.
+- Each build ran once on one web task. Runs of nearly the same setup varied by about 30%, so treat the gap as a signal, not a guarantee.
 - The quality scores are the author's judgment, not an independent review.
 - About two thirds of the cost is the starting context (your installed plugins, skills and agents), which routing cannot shrink. Removing what you do not use saves more.
 - Not tested: CLI, mobile or backend projects, an Opus or Fable main session, macOS and Linux.
