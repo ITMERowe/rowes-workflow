@@ -3,6 +3,10 @@
 Code changes, newest first: each file and section, what changed and why.
 
 ## 2026-11-14 (uncommitted)
+### hideout 3.0.4: every project ships a check that can fail
+- `plugins/hideout/hooks/register.tsx` (`HOUSE_RULES`): a new project or feature ships with at least one automated check that can fail, from the stack's own tools (test runner, linter or type checker, or a check on the built output such as links, assets, schema or exit codes); add the smallest one if none exists, and report only results actually seen. `.claude-plugin/plugin.json` 3.0.4. Why: the V5 run (cheapest good run, $1.08) had only a type check: no tests, lint or link check, and said so in its handoff; V3 and V4 had them.
+- Moved: the code-change, stack, check, dependency and batching rules now live in auto-route's `rules/workflow.md` (section "Code changes"), which every auto-route user gets; hideout's `HOUSE_RULES` keeps only the progress-tool rule that needs hideout. The ponytail line is conditional ("if a code-style skill is installed"). Why: rules that ship with the UI plugin skip anyone who installs only auto-route, and all behavior must reach every user. auto-route 0.5.7.
+
 ### auto-route 0.5.6: smaller recon reports, verifier only for long output
 - `plugins/auto-route/agents/explore.md`: reports are one terse `path:line — fact` per line, at most 40 lines unless the brief sets another cap (was 15 rows, which briefs overrode with 70). `hooks/register.ts` (survey note): briefs carry the same 40-line cap. Why: V4 ran on Haiku correctly ($1.31, Sonnet 94% / Haiku 6%) but the three recon reports came back as about 122k characters (roughly 25-30k tokens) and sat in the main context for the other ~25 calls, about $0.2 of cache writes and reads.
 - Same file (survey note, verifier row): the main session runs lint, type, test and build itself in one batched command and uses `auto-route:verifier` only for a long suite (over ~3k tokens of output); never poll with sleep. Why: V4 delegated a short check to the verifier (13 Haiku calls), polled with `sleep 60`, then reran lint itself, so delegation added calls and saved nothing.

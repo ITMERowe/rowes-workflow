@@ -54,14 +54,8 @@ const STEP_BRIEF = `
 
 Progress reporting: before any other work, call \`${STEP_TOOL}\` with \`total\` (your plan in 3-8 steps) and \`done: 0\`; call it again with \`done\` and a few-word \`note\` as each step finishes. It only draws a progress bar.`
 const PANE = 'hideout-agents'
-export const HOUSE_RULES = `## Code changes
-- Before the first code edit in a session, invoke the ponytail:ponytail skill; follow it for every change.
-- Once per task, when its code changes are done (not after each edit), add an entry at the top of CHANGELOG.md at the repo root (create it if missing): today's date, then each changed file and section with one line on what and why. In chat, link the entry instead of repeating it.
-- In the same pass, update HANDOFF.md at the repo root (create it if missing): what changed and what is left, and delete anything no longer true or relevant. Write both in one edit each.
-- For multi-step work, report through the mcp__hideout__progress tool when it is available (title, phase, tasks, done): update it as each step finishes and set finished at the end. Run long jobs as background tasks or subagents so they show in the agents panel.
-- Pick the lightest stack the task needs: the platform first, zero runtime dependencies, and a framework only when the task needs client-side state. A content site is static pages, not a single-page app.
-- Use dependency versions that install and build cleanly. Do not upgrade packages or chase audit advisories unless the task asks or the build fails; note a known advisory in the handoff instead.
-- When a tool can batch steps (for example browser_batch: navigate, resize, screenshot), send them in one call instead of one call per step.`
+export const HOUSE_RULES = `## Progress
+- For multi-step work, report through the mcp__hideout__progress tool when it is available (title, phase, tasks, done): update it as each step finishes and set finished at the end. Run long jobs as background tasks or subagents so they show in the agents panel.`
 
 // shortcut: a desktop row is the code font's line height, about 20 px measured; read it from the surface if one ever reports it.
 export const ROW_PX = 20
