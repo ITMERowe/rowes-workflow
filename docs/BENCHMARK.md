@@ -1,57 +1,70 @@
-# Cutting the cost of agentic coding by delegating reads: a benchmark report on auto-route
+# Cutting the cost of agentic coding by delegating reads: a benchmark of auto-route
 
 | | |
 |---|---|
 | **Tested baseline** | auto-route 0.5.9 · Hideout 3.0.6 |
 | **Main model** | Claude Sonnet 5.5 (Claude Code desktop) |
 | **Date** | 2026-11-14 |
-| **Status** | One task, one run per build (n = 8). Exploratory, not a controlled trial. |
+| **Design** | Exploratory, sequential, one task, one run per build (n = 8). Not a controlled trial. |
+
+<p align="center"><img src="results.svg" alt="auto-route against plain Claude Code on the same build: cost per build $0.89 against $1.11 (20% less); tokens read from cache 2.0M against 3.0M (a third fewer)" width="620"></p>
 
 ## 1. Abstract
 
-An agent session is billed mostly for re-reading its own context on every model call. We tested whether sending bulk reading to a cheaper model (Haiku), and *enforcing* that with a hook instead of asking for it in the prompt, lowers the cost of a real build without lowering the quality of the result. On one task (build a developer portfolio from a public GitHub profile with seven repositories) the best build cost **$0.89 against $1.11** for plain Claude Code (−20%), read **a third fewer tokens** (2.0M against 3.0M) and scored **32 against 25 of 35** on a seven-criterion rubric. Cost tracked cache-read tokens closely (r = 0.94, n = 8) and main-session calls even more closely (r = 0.97, n = 6). Delegation alone did not make a build cheap; fewer calls did. A prompt-level delegation rule was followed in 2 of 4 runs, the enforcing hook in 3 of 3. The sample is small and the quality scores are single-rater, so the result is a signal, not a proof.
+An agent session is billed mostly for re-reading its own context on every model call. We tested whether sending bulk reading to a cheaper model (Haiku), and *enforcing* that with a hook instead of asking for it in the prompt, lowers the cost of a real build without lowering the quality of the result.
+
+On one task (build a developer portfolio from a public GitHub profile with seven repositories) the best build, run 7, cost **$0.89 against $1.11** for plain Claude Code (−$0.22, −19.8%), read **a third fewer tokens** (2.0M against 3.0M) and scored **32 against 25 of 35** on a seven-criterion rubric. Cost tracked cache-read tokens (r = 0.94, n = 8) and main-session calls (r = 0.97, n = 6). Delegation alone did not make a build cheap; fewer calls did. A prompt rule delegated the reading in 2 of 4 tests, the enforcing hook in 3 of 3.
+
+The configurations changed between runs, so the result is about a *whole workflow*, not one variable. It supports a controlled replication, not a general claim of proven savings.
 
 ## 2. Questions and hypotheses
 
-| | Hypothesis | Measure |
+| | Hypothesis | Evaluated by |
 |---|---|---|
-| **H1** | Session cost is driven by *calls × context size*, not by output. | Correlation of cost with cache-read tokens and main-session calls. |
-| **H2** | Delegating bulk reading to Haiku lowers cost without lowering result quality. | Cost, calls and rubric score of delegating against non-delegating builds. |
-| **H3** | A delegation instruction in the prompt is unreliable; a `tool.call` hook is reliable. | Share of survey tasks in which reading was delegated, by mechanism. |
+| **H1** | Cost is driven by context re-read and call count, not by output. | Cost against cache-read tokens and against main-session calls. |
+| **H2** | Delegating bulk reading to Haiku lowers cost without lowering quality. | Cost, calls and rubric score of delegating against non-delegating runs. |
+| **H3** | A prompt-level delegation rule is unreliable; a `tool.call` hook is reliable. | Share of survey tasks in which reading was delegated, by mechanism. |
 
 ## 3. Method
 
-### 3.1 Task
-One brief, identical for every run: analyse a public GitHub profile and its seven repositories, select and describe projects without inventing facts, build a static portfolio (home, filterable project list, project detail pages, expertise, about, contact), run the available checks, document it and report what was actually verified. Reading seven repositories is the expensive part, which is what delegation targets, and the output can be audited against the repositories afterwards.
+### 3.1 Task and design
+One brief, identical every time: analyse a public GitHub profile and its seven repositories, select and describe projects without inventing facts, build a static portfolio (home, filterable project list, project pages, expertise, about, contact), run the available checks, document it and report what was verified. Reading seven repositories is the expensive step that delegation targets, and the output can be audited against the repositories.
 
-### 3.2 Conditions
-Each run used a fresh Claude Code session on Sonnet 5.5. Plain Claude Code is the control (no plugins' routing or rules). Builds differ only in the auto-route version installed and the defects fixed between runs (section 5).
+Each run used a fresh Claude Code session on Sonnet 5.5. Plain Claude Code is the control. Numbered runs are successive auto-route builds; defects found in one run were fixed before the next (section 6), so each comparison is between **whole configurations**.
 
-### 3.3 Efficiency measures
-Cost, input and cache tokens and the model split come from the session's `/usage` panel. Main-session call counts, tool use, subagent calls and final context size come from the session transcript. Lines added come from the panel.
+### 3.2 Measures
 
-### 3.4 Quality rubric
-Seven criteria, scored 1–5 with equal weight (maximum 35). Anchors below; 2 and 4 are in-between.
+| Variable | Source | Note |
+|---|---|---|
+| Cost, cache read and write, Haiku share, lines added | Session `/usage` panel | Haiku share is a share of usage, not a cost split. |
+| Main-session calls, final context, subagent calls | Session transcript | Not available for the control or run 1. |
+| Quality | Rubric below plus spot checks | One unblinded rater; run 6 not scored. |
+| Delegation occurred | Transcript | Includes headless tests for H3. |
+
+Derived: `points per dollar = rubric total ÷ cost`; `cost change = (configuration − control) ÷ control`. Correlations are Pearson r on the rounded table values, so they are approximate.
+
+### 3.3 Quality rubric
+Seven criteria, 1–5 each, equal weight, maximum 35. Anchors at 1, 3 and 5; 2 and 4 are in between.
 
 | Code | Criterion | 1 | 3 | 5 |
 |---|---|---|---|---|
-| **F** | Verifiable facts | Claims wrong or unverifiable | Claims correct, cited to files only | Spot-checked claims all correct; every engineering decision cites `file:line` |
-| **C** | Coverage of the brief | Required pages or sections missing | All pages; projects described thinly | All pages and filter; each project has objectives, implementation, decisions, limits |
-| **S** | SEO and static delivery | One JavaScript-rendered page | Static pages, meta tags partial or guessed deploy details | Per-page static HTML with title, description, canonical, Open Graph; deploy URL and base path configurable, not guessed |
+| **F** | Verifiable facts | Claims wrong or unverifiable | Correct, cited to files only | Spot-checked claims correct; every engineering decision cites `file:line` |
+| **C** | Coverage of the brief | Required pages or sections missing | All pages; projects thin | All pages and filter; each project has objectives, implementation, decisions, limits |
+| **S** | SEO and static delivery | One JavaScript-rendered page | Static pages; partial meta or guessed deploy details | Per-page static HTML with title, description, canonical, Open Graph; deploy URL and base path configurable |
 | **K** | Automated checks | None | One type check | Lint, types, tests and build, or a type check plus a check on the built output that can fail |
 | **D** | Design (subjective) | Generic template, flat hierarchy | Clear hierarchy, little character | Distinct type and layout, restrained palette, evidence presented well |
 | **P** | Performance | Heavy runtime on every page | 30–200 KB of JavaScript | ≤ 30 KB of JavaScript and ≤ 400 KB total output |
-| **R** | Docs and honesty | No docs | README with run steps | README with structure and decisions; handoff lists what was not verified; sensitive data handled |
+| **R** | Docs and honesty | None | README with run steps | README with structure and decisions; handoff lists what was not verified; sensitive data handled |
 
-### 3.5 Verification
-For each scored run the builds were run (`build`, `check`, tests where present) and a handful of claims per run were checked against clones of the repositories: line counts, commit counts, test-file counts and cited `file:line` references. Design was judged from the rendered home and project pages at desktop and phone width.
+### 3.4 Verification
+Each scored build was run (`build`, `check`, tests where present). A handful of claims per run were checked against clones of the repositories: line counts, commit counts, test-file counts and cited `file:line` references. Design was judged from the rendered home and project pages at desktop and phone width.
 
 ## 4. Results
 
 ### 4.1 Efficiency
 
 | Run | Setup | Cost | Main calls | Cache read | Cache write | Final context | Haiku share | Lines added |
-|---|---|---|---|---|---|---|---|---|
+|---|---|---:|---:|---:|---:|---:|---:|---:|
 | Plain | none | $1.11 | n/a | 3.0M | 96k | 142k | 0% | +1048 |
 | 1 | early auto-route | $1.42 | n/a | 4.0M | 157k | 157k | 0% | +869 |
 | 2 | 0.5.2 | $1.26 | 32 | 3.8M | 102k | 148k | 8% | +930 |
@@ -61,7 +74,9 @@ For each scored run the builds were run (`build`, `check`, tests where present) 
 | 6 | 0.5.7 | $1.33 | 36 | 4.6M | 108k | 154k | 0% | +879 |
 | **7** | **0.5.9** | **$0.89** | **19** | **2.0M** | **87k** | **132k** | 2% | +659 |
 
-An earlier run of 0.5.4 cost $2.47 (section 5, D1). Run 5 built six projects: the agent asked about a repository that publishes real bank details and the owner said to skip it.
+- Run 7 has the lowest cost, calls, cache read and final context of the eight.
+- An extra run of 0.5.4 cost $2.47 and is **not** in the table: all five explore agents ran on Sonnet (D1, section 6).
+- Run 5 built six projects, not seven: the agent asked about a repository that publishes real bank details and the owner said to skip it. Its workload and score are not strictly comparable.
 
 ### 4.2 Quality
 
@@ -81,13 +96,21 @@ An earlier run of 0.5.4 cost $2.47 (section 5, D1). Run 5 built six projects: th
 </tbody>
 </table>
 
-<sub>F facts · C coverage · S SEO and static delivery · K checks · D design · P performance · R docs and honesty. Each 1–5; criteria in section 3.4.</sub>
+<sub>F facts · C coverage · S SEO and static delivery · K checks · D design · P performance · R docs and honesty. An empty score would mean "not scored", never zero.</sub>
 
-Spot checks: run 7's counts (9,145 source lines, 106 commits, 655 lines of `i18n.ts`) and cited lines (`ARCHITECTURE.md:66, 84, 85`) were correct; one imprecision (13 end-to-end "tests" counted files including two helpers, 11 suites). Run 3 miscounted the same suites as 10. Cited lines were spot-checked for runs 4, 5 and 7 and were correct in the sample; the references in run 2 were not checked.
+**Spot checks**
+
+| Run | Checked | Result |
+|---|---|---|
+| 7 | 9,145 source lines · 106 commits · 655 lines of `i18n.ts` · `ARCHITECTURE.md:66, 84, 85` | Correct |
+| 7 | "13 end-to-end tests" | Imprecise: 11 suites plus 2 helper files |
+| 3 | "10 end-to-end suites" | Wrong: 11 |
+| 4, 5 | Cited `file:line` references and counts in a sample | Correct |
+| 2 | Cited references | Not checked |
 
 ### 4.3 Cost-effectiveness
 
-Points per dollar is the quality total divided by cost, sorted best first. Ranks are among the seven scored runs (run 6 is not scored): cost 1 = cheapest, score 1 = highest.
+Sorted best first. Ranks are among the seven scored runs: cost 1 = cheapest, score 1 = highest.
 
 | Run | Cost | Score (of 35) | **Points per $** | Cost rank | Score rank | Ratio rank |
 |---|---:|---:|---:|:---:|:---:|:---:|
@@ -99,71 +122,84 @@ Points per dollar is the quality total divided by cost, sorted best first. Ranks
 | Plain | $1.11 | 25 | 22.5 | 4 | 7 | 6 |
 | 1 | $1.42 | 28 | 19.7 | 7 | 6 | 7 |
 
-Run 7 is first on cost, on score and on the ratio, so the ranking does not depend on how cost and quality are weighted.
+Run 7 is cheaper **and** higher-scoring than every other scored run, so it is first however cost and quality are weighted. That describes this dataset; it is not a predicted outcome of a repeat.
 
-### 4.4 H1: cost follows context × calls
+## 5. Hypotheses
+
+### H1: cost follows context × calls
 
 | Relationship | n | r | R² | Slope |
 |---|---:|---:|---:|---|
 | Cost against cache-read tokens | 8 | **0.94** | 0.89 | $0.21 per million tokens (intercept $0.47) |
 | Cost against main-session calls | 6 | **0.97** | 0.95 | about $0.03 per call |
 
-Token mix in run 7 (the best build):
+Token mix in run 7:
 
-| Cached context read | Cached context written | Output |
-|---:|---:|---:|
-| 2.04M | 87k | about 32k |
+| Cached context read | Cached context written | Output | Cached share of all tokens |
+|---:|---:|---:|---|
+| 2.04M | 87k | about 32k | **98.5%** read and written together; **94.5%** reads alone |
 
-98% of the tokens processed were cached context. Supported: the bill grows with how often the context is re-read.
+Output is the transcript's sum; the usage panel's own output figure is lower. **Verdict: consistent with H1.** Cost and the two activity measures move together; the design does not separate them or prove which causes which, and the fits are descriptive, not billing formulas.
 
-### 4.5 H2: delegation and cost
+### H2: delegation and cost
 
 | Group | Runs | n | Mean cost | Quality range |
 |---|---|---:|---:|---|
-| Delegated reading | 2, 4, 5, 7 | 4 | **$1.14** | 30–32 |
+| Delegated reading | 2, 4, 5, 7 | 4 | **$1.14** (exact $1.135) | 30–32 |
 | Did not delegate | 1, 3, 6 | 3 | **$1.24** | 28–29 (run 6 not scored) |
-| Plain Claude Code (control) | n/a | 1 | $1.11 | 25 |
+| Plain Claude Code | n/a | 1 | $1.11 | 25 |
 
-The gap between the first two groups is well inside the build-to-build spread. Delegation moves reading out of the main context but adds cold starts and wake-ups; it paid off only together with few calls: run 7 made 19 calls, with three Haiku agents making 14 calls in total, against 32 calls in run 2 and 31 in run 4. Quality did not fall. Partly supported: delegation is necessary for the best result here, not sufficient.
+The $0.10 gap is inside the build-to-build spread, and the delegating mean is still above the plain control. Delegation appears in both a costly run (run 4, $1.31) and the cheapest (run 7, $0.89). It moves reading out of the main context but adds cold starts, wake-ups and returned reports; it paid off with few calls: run 7 made 19 calls, with three Haiku agents making 14 calls in total, against 32 calls in run 2 and 31 in run 4. Delegating runs scored 30–32, so quality did not visibly fall. **Verdict: partly supported.** The best result used delegation; the data do not show that delegation alone saves money.
 
-### 4.6 H3: prompt rule against hook
+### H3: prompt rule against hook
 
-| Mechanism | Runs | Delegated |
-|---|---|---|
-| Prompt note naming the survey step | 4 (runs 4, 5, 6 and one headless test) | **2 of 4** |
-| `tool.call` gate refusing the main session's own clone until an explore agent exists | 3 (run 7 and two headless runs) | **3 of 3** |
+| Mechanism | Tests | Delegated |
+|---|---|---:|
+| Prompt note naming the survey step | Runs 4, 5, 6 and one headless test | **2 of 4** |
+| `tool.call` gate refusing the main session's own clone until an explore agent exists | Run 7 and two headless tests | **3 of 3** |
 
-The failures had a cause: a routing rule saying that jobs under about 20k tokens "stay here" gave the model an out. Supported, with a sample too small for a significance test.
+The prompt rule failed where a routing rule saying jobs under about 20k tokens "stay here" gave the model an out. These are mechanism observations, not seven replicates of the full build. **Verdict: supported within these tests;** a general success rate is not established.
 
-## 5. Defects found along the way
+## 6. Defects found along the way
 
 | | Symptom | Cause | Fix |
 |---|---|---|---|
-| **D1** | Explore agents ran on Sonnet ($2.47) | The agent file's YAML description held `broad: "medium"`; on a Windows (CRLF) checkout the frontmatter failed to parse and the runtime dropped the model, effort and tool settings | Description reworded (0.5.9); an `agent.spawn` hook also sets the model from the table (0.5.5) |
+| **D1** | Explore agents ran on Sonnet ($2.47) | The agent file's YAML description held `broad: "medium"`; on a Windows (CRLF) checkout the frontmatter failed to parse and the runtime dropped the model, effort and tool settings | Description reworded (0.5.9); an `agent.spawn` hook also sets the model from the routing table (0.5.5) |
 | **D2** | 25–30k tokens of agent reports re-read on every later call | Briefs overrode the agent's 15-row cap | 40 terse lines per repository (0.5.6) |
-| **D3** | Verifier agent added calls and saved nothing | Delegating a short check, then polling with `sleep` | Verifier only for output over about 3k tokens; no polling (0.5.6) |
+| **D3** | Verifier agent added calls and saved nothing | A short check delegated, then polled with `sleep` | Verifier only for output over about 3k tokens; no polling (0.5.6) |
 | **D4** | Reading done inline despite the note | Soft rule plus a conflicting size rule | Enforcing gate (0.5.8) |
-| **D5** | Gate bypass | `gh api repos/…/contents` and `WebFetch` were not covered | Both covered (0.5.8) |
-| **D6** | Wasted calls on dependency upgrades and one-step browser actions | No rule against either | Rules to skip unrequested upgrades and to batch tool steps (0.5.7) |
+| **D5** | Gate bypassed | `gh api repos/…/contents` and `WebFetch` not covered | Both covered (0.5.8) |
+| **D6** | Calls spent on dependency upgrades and one-step browser actions | No rule against either | Skip unrequested upgrades; batch tool steps (0.5.7) |
 | **D7** | A static site built as a React single-page app | Nothing steered the stack | "Lightest stack the task needs" rule (0.5.7) |
 
-## 6. Threats to validity
+D1, D4 and D5 were silent: the final site looked fine either way. D2 and D3 show that delegating without controlling returned context can cancel the saving. Because the fixes accumulated, run 7's result cannot be credited to any one of them.
 
-- **Statistical.** One run per build. The six auto-route builds from run 2 to run 7 span $0.89–$1.33, a coefficient of variation of 16%. Run 7's −20% against the control is about 1.2 such deviations: suggestive, not significant.
-- **Rater.** Quality was scored by one unblinded rater (the assistant that analysed the runs, reviewed by the author), who knew which run used which build. Design (D) is subjective. An independent re-score would be the first improvement.
-- **Construct.** The rubric rewards what the brief asked for (evidence, checks, static delivery); a different brief would weight differently. Points per dollar mixes a judged score with a measured cost.
-- **Internal.** Builds were not isolated: fixes were made between runs, the owner answered one question during run 5, and run 6 was not preserved. Prices were not re-fitted per run, so no dollar split of cost is claimed, only token counts.
-- **External.** One web task, one machine (its plugin and skill set sets an 80k-token starting context, about two thirds of every bill), one main model. CLI, mobile and backend projects, Opus or Fable as the main model, macOS and Linux were not tested.
+## 7. Threats to validity
 
-## 7. Conclusion
+| Category | Limitation | Consequence |
+|---|---|---|
+| Statistical | One run per build. Runs 2–7 span $0.89–$1.33, a 16% coefficient of variation | The −20% against the control is about 1.2 such deviations: suggestive, not significant |
+| Rater | One unblinded rater (the assistant that analysed the runs, reviewed by the author); design is subjective | Scores may reflect rater knowledge |
+| Construct | The rubric rewards what the brief asked for | Another brief would weight differently; points per dollar mixes a judged score with a measured cost |
+| Internal | Fixes between runs, an owner answer in run 5, run 6 not preserved | Differences cannot be attributed to delegation alone |
+| Cost attribution | No re-fitted per-run prices | No dollar split by token type is claimed |
+| External | One web task, one machine, one main model | An installed plugin and skill set gave an 80k-token starting context, about two thirds of every bill; CLI, mobile and backend projects, Opus or Fable as main model, macOS and Linux are untested |
 
-On this task, enforcing delegation of bulk reading together with a call-frugal workflow produced the cheapest and highest-scoring build, and the mechanism fits the data: cost follows re-read context. The effect size is plausible but unproven at n = 1 per build. The defects in section 5 matter as much as the headline: three of them (D1, D4, D5) were silent failures that a prompt-only approach would not have revealed.
+## 8. Conclusion
 
-## 8. Reproducing
+The cheapest and highest-scoring build combined enforced delegation of bulk reading with few main-session calls: **$0.89 and 32/35 against $1.11 and 25/35** for plain Claude Code. Cost was strongly associated with cached context read and with call count; delegation was not sufficient on its own; the enforcing hook delegated more reliably than the prompt rule within the tests run. The effect is plausible, the sample is one run per build, and the claim stops there: repeated, controlled runs with an independent rater come next.
+
+## 9. Reproducing
 
 1. Install auto-route 0.5.9 and Hideout 3.0.6 (see the [README](../README.md)); use an empty working folder.
-2. Run the portfolio brief from section 3.1 in a fresh session on Sonnet 5.5, once with the plugins disabled and once enabled.
-3. Record `/usage` (cost, cache read and write, model split) and read the session transcript for call counts.
-4. Build the result, run its checks, spot-check a handful of claims against the repositories and score it with the rubric in section 3.4, ideally with a second rater.
+2. Run the brief from section 3.1 in a fresh Sonnet 5.5 session, once with the plugins disabled and once enabled.
+3. Record `/usage` (cost, cache read and write, model split) and read the transcript for call counts and routing.
+4. Build the result, run its checks, spot-check claims against the repositories and score it with section 3.3, ideally with a second rater.
+5. Repeat each condition several times and report the spread.
 
-Repeat several times per condition and report the spread. Numbers from other machines, tasks and raters are the most useful addition.
+## Data notes
+
+- Eight primary observations; the $2.47 run and the headless tests are reported separately and never mixed into them.
+- Missing quality stays missing: run 6 is in no ranking or group quality range.
+- Values keep the precision of the usage panel; reconstructed statistics are approximate.
+- Observed association is not causation, and the sample is too small for a significance test.
