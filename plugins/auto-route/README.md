@@ -13,7 +13,7 @@ A model-routing plugin for Claude Code. It works on its own: no other plugin is 
 | Messy code, root-cause debugging, multi-file change with invariants | `auto-route:heavy` | opus, extra-high effort |
 | Read a guide, post, doc page or link | `auto-route:reader` | haiku |
 | Locate code: "where is X", "what calls Y" | `auto-route:searcher` | haiku |
-| Broad sweep across many files, conclusion only | `auto-route:explore` | haiku |
+| Broad sweep across many files, or inspecting a GitHub profile or repos before a build; one subagent per repo, facts with quoted lines | `auto-route:explore` | haiku |
 | Bounded edit: rename, known-cause bug, boilerplate, tests | `auto-route:editor` | sonnet |
 | Anything else | main session | session model |
 
@@ -72,6 +72,17 @@ The table, the per-prompt keywords and the skill list are in `hooks/register.ts`
 - `SKILLS`: the skill keywords.
 
 The notes come from a keyword list, so some prompts will match the wrong row or none. Claude treats a note as a hint, and the table decides.
+
+## Test it yourself
+
+Use `/usage` and compare two fresh sessions on the same job:
+
+1. Pick one real job with several steps, such as "find every place X is used across the repo and summarize it". A one-line question will not show a saving: the plugin only delegates jobs over about 3 tool calls.
+2. Run `/plugin disable auto-route@exiles`, then `/reload-plugins`. Start a new session and run the job. Note the cost and the per-model rows in `/usage`.
+3. Run `/plugin enable auto-route@exiles`, `/reload-plugins`, start another new session, and run the same job.
+4. Compare. A win shows as a Haiku or Sonnet row taking tokens that Opus took before, and a lower total cost.
+
+Run each side two or three times: one run is noisy. For a scripted version, run `claude -p "<job>" --output-format json` and read `total_cost_usd` and `modelUsage` from the result.
 
 ## Credits
 
