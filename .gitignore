@@ -14,3 +14,5 @@ bench-results/
 test-results/
 coverage/
 Screenshot *.png
+*.test.ts
+*.test.tsx
