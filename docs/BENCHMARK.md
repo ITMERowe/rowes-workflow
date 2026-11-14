@@ -87,15 +87,44 @@ Spot checks: run 7's counts (9,145 source lines, 106 commits, 655 lines of `i18n
 
 ### 4.3 Cost-effectiveness
 
-Points per dollar (total ÷ cost): plain 22.5 · run 1 19.7 · run 2 23.8 · run 3 29.9 · run 4 22.9 · run 5 28.7 · **run 7 36.0**. Run 7 is first on cost, on score and on this ratio, so the ranking does not depend on how cost and quality are weighted.
+Points per dollar is the quality total divided by cost, sorted best first. Ranks are among the seven scored runs (run 6 is not scored): cost 1 = cheapest, score 1 = highest.
+
+| Run | Cost | Score (of 35) | **Points per $** | Cost rank | Score rank | Ratio rank |
+|---|---:|---:|---:|:---:|:---:|:---:|
+| **7** | $0.89 | 32 | **36.0** | 1 | 1 | 1 |
+| 3 | $0.97 | 29 | 29.9 | 2 | 5 | 2 |
+| 5 | $1.08 | 31 | 28.7 | 3 | 2 | 3 |
+| 2 | $1.26 | 30 | 23.8 | 5 | 3= | 4 |
+| 4 | $1.31 | 30 | 22.9 | 6 | 3= | 5 |
+| Plain | $1.11 | 25 | 22.5 | 4 | 7 | 6 |
+| 1 | $1.42 | 28 | 19.7 | 7 | 6 | 7 |
+
+Run 7 is first on cost, on score and on the ratio, so the ranking does not depend on how cost and quality are weighted.
 
 ### 4.4 H1: cost follows context × calls
 
-Across the eight runs cost against cache-read tokens gives **r = 0.94 (R² = 0.89), slope $0.21 per million tokens, intercept $0.47**. Across the six runs with known call counts, cost against main calls gives **r = 0.97, about $0.03 per call**. In run 7, 98% of tokens processed were cached context (2.04M read, 87k written) against about 32k of output. Supported: the bill grows with how often the context is re-read.
+| Relationship | n | r | R² | Slope |
+|---|---:|---:|---:|---|
+| Cost against cache-read tokens | 8 | **0.94** | 0.89 | $0.21 per million tokens (intercept $0.47) |
+| Cost against main-session calls | 6 | **0.97** | 0.95 | about $0.03 per call |
+
+Token mix in run 7 (the best build):
+
+| Cached context read | Cached context written | Output |
+|---:|---:|---:|
+| 2.04M | 87k | about 32k |
+
+98% of the tokens processed were cached context. Supported: the bill grows with how often the context is re-read.
 
 ### 4.5 H2: delegation and cost
 
-Runs that delegated (2, 4, 5, 7) averaged **$1.14**; those that did not (1, 3, 6) averaged **$1.24** (n = 4 against 3), a gap well inside the build-to-build spread. Delegation moves reading out of the main context but adds cold starts and wake-ups; it paid off only together with few calls (run 7: 19 calls, three Haiku agents making 14 calls in total, against 32 calls in run 4). Quality did not fall: delegating runs scored 30–32, non-delegating 28–29 (the plain control, 25). Partly supported: delegation is necessary for the best result here, not sufficient.
+| Group | Runs | n | Mean cost | Quality range |
+|---|---|---:|---:|---|
+| Delegated reading | 2, 4, 5, 7 | 4 | **$1.14** | 30–32 |
+| Did not delegate | 1, 3, 6 | 3 | **$1.24** | 28–29 (run 6 not scored) |
+| Plain Claude Code (control) | n/a | 1 | $1.11 | 25 |
+
+The gap between the first two groups is well inside the build-to-build spread. Delegation moves reading out of the main context but adds cold starts and wake-ups; it paid off only together with few calls: run 7 made 19 calls, with three Haiku agents making 14 calls in total, against 32 calls in run 2 and 31 in run 4. Quality did not fall. Partly supported: delegation is necessary for the best result here, not sufficient.
 
 ### 4.6 H3: prompt rule against hook
 
