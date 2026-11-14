@@ -23,7 +23,7 @@ export const ROUTES: Route[] = [
 export const RULES = `## Routing (auto-route)
 Standing request from the user: use the subagents below whenever a task matches a row; do not wait to be told.
 
-Delegate only when it saves context or money, or needs a stronger model. A subagent starts cold, so a job that reads or returns under ~20k tokens (a few files or commands, looped or not) stays here. If an advisor is configured (\`advisorModel\`), ask it before hard work and before declaring done, not an Opus subagent.
+Delegate only when it saves context or money, or needs a stronger model. A subagent starts cold, so a job that reads or returns under ~20k tokens (a few files or commands, looped or not) stays here, except a survey of two or more repos, which always goes to subagents. If an advisor is configured (\`advisorModel\`), ask it before hard work and before declaring done, not an Opus subagent.
 
 | Work | Agent | Model |
 |---|---|---|
@@ -41,7 +41,7 @@ ${ROUTES.map(r => `| ${r.work} | \`${r.agent}\` | ${r.model} |`).join('\n')}
 // The standing part in the system prompt: a session that never delegates pays for these few lines, not the table.
 // The full RULES ride along once, with the first note that names a routing row.
 export const RULES_LITE = `## Routing (auto-route)
-Standing request from the user: use the \`auto-route:*\` subagents when a task matches: searcher, explore, reader (haiku) for finding and reading; editor (sonnet) for bounded edits; verifier (haiku) for running builds and tests, always passing the row's model as the Agent \`model\`; heavy, reviewer (opus) for hard or risky work. Delegate only when it saves context or money, or needs a stronger model; a job under ~20k tokens of reading or output stays here, and bigger reads go to subagents in parallel. The full table comes with the first prompt note that names a row.`
+Standing request from the user: use the \`auto-route:*\` subagents when a task matches: searcher, explore, reader (haiku) for finding and reading; editor (sonnet) for bounded edits; verifier (haiku) for running builds and tests, always passing the row's model as the Agent \`model\`; heavy, reviewer (opus) for hard or risky work. Delegate only when it saves context or money, or needs a stronger model; a job under ~20k tokens of reading or output stays here, and bigger reads go to subagents in parallel; a survey of two or more repos always does, whatever its size. The full table comes with the first prompt note that names a row.`
 
 // A prompt that only asks to read something: a link or a guide, post or doc, and no word that changes code.
 const READ_VERB = /\b(read|summari[sz]e|tl;?dr|skim|explain|what does|what's in|go through|check out|look at)\b/i
@@ -97,6 +97,21 @@ export const modelFor = (label: string | undefined, context: number, limits: { h
 // A survey of repos or a profile, as opposed to a targeted question about one codebase: only a survey gets the recon checklist.
 const SURVEY = /github\.com\/[\w-]+|\b(inspect|analy[sz]e|survey|examine|investigate)\b.{0,50}\b(repos?|repositor(y|ies)|profile|codebase)\b/i
 
+// A short question, even one that names a URL (isQuestion treats a path-like word as code): it asks about work, it does not order a survey.
+const asksOnly = (text: string): boolean => text.length <= 400 && (QUESTION_START.test(text) || /\?\s*$/.test(text))
+
+// A survey of a whole profile or several repos (not one named repo): the main session must not read these itself.
+const MANY = /\b(repos|repositories|profile)\b|github\.com\/[\w-]+\/?(?=[\s)\].,"']|$)/i
+// Cloning, or fetching repo files over the API: the first step of reading a repo yourself.
+const CLONE = /\b(git\s+clone|gh\s+repo\s+clone)\b|raw\.githubusercontent\.com|(api\.github\.com\/|\bgh\s+api\s+\/?)repos\/[^\s"']+\/(contents|git\/trees|readme)/i
+
+/** True when a prompt asks for a survey of several repos, and so gates the main session's own reading. */
+export const isSurvey = (text: string): boolean =>
+  !asksOnly(text) && routeFor(text)?.agent === A('explore') && SURVEY.test(text) && MANY.test(text)
+
+/** True for a Bash command that clones a repo or fetches its files. */
+export const readsRepo = (command: string): boolean => CLONE.test(command)
+
 const READ_ONLY_ROWS = new Set([A('searcher'), A('explore'), A('reader')])
 
 /** The routing note for one prompt, or undefined when nothing fits. */
@@ -109,7 +124,7 @@ export const routeNote = (text: string, hinted: Set<string> = new Set()): string
   if (r?.agent === A('reader'))
     lines.push('auto-route: this ask only reads a guide, post or link. Hand the reading to the `auto-route:reader` subagent (haiku) with the link or path and what to pull out, then relay its summary. Read it yourself only if it is one short local file.')
   else if (r)
-    lines.push(`auto-route: this ask matches the \`${r.agent}\` row (${r.model}): ${r.work}. ${survey ? '' : ' Delegate that part only if it needs over ~20k tokens of reading.'}${survey ? ' Per repo, gather: purpose; stack with versions; structure with wc -l of the main files; tests (framework, file count); CI; docs; commit count and date range (git rev-list --count, git log); notable decisions with file:line; known limits or hygiene problems; asset paths and sizes. Read it yourself only for a single small repo (under ~50 source files); with two or more repos, or a bigger one, use at most 3 subagents (group small repos), all in one message, briefed with this list, "facts as path:line plus quote, no opinions" and a cap of 40 lines per repo, one fact per line (their reports stay in your context for every later call). Every claim you publish carries a file:line or a command count: count, never estimate. While subagents run, keep working on what does not need their results (set up the project, install, write code that does not depend on them); do not end the turn to wait. Before you finish, recheck about five published numbers against the source in one batched command and fix any mismatch. When the build is done, run lint, type, test and build yourself in one batched command; hand them to `auto-route:verifier` only for a long suite (over ~3k tokens of output), and never poll with sleep. You still read each failure and fix it, and you do not claim done on the word of a subagent without its exit lines.' : ''}`)
+    lines.push(`auto-route: this ask matches the \`${r.agent}\` row (${r.model}): ${r.work}. ${survey ? '' : ' Delegate that part only if it needs over ~20k tokens of reading.'}${survey ? ' For this survey, delegate the reading: clone the repos in one command, then in your next message spawn up to 3 `auto-route:explore` agents with model "haiku" (group small repos) and read no repo file yourself first. Per repo, gather: purpose; stack with versions; structure with wc -l of the main files; tests (framework, file count); CI; docs; commit count and date range (git rev-list --count, git log); notable decisions with file:line; known limits or hygiene problems; asset paths and sizes. Only a single small repo (under ~50 source files) may be read by you; every agent goes in the same message, briefed with this list, "facts as path:line plus quote, no opinions" and a cap of 40 lines per repo, one fact per line (their reports stay in your context for every later call). Every claim you publish carries a file:line or a command count: count, never estimate. While subagents run, keep working on what does not need their results (set up the project, install, write code that does not depend on them); do not end the turn to wait. Before you finish, recheck about five published numbers against the source in one batched command and fix any mismatch. When the build is done, run lint, type, test and build yourself in one batched command; hand them to `auto-route:verifier` only for a long suite (over ~3k tokens of output), and never poll with sleep. You still read each failure and fix it, and you do not claim done on the word of a subagent without its exit lines.' : ''}`)
   // Each skill is hinted once per session, and a plain question gets none: a repeat only adds context tokens.
   if (r && !hinted.has('rules')) {
     hinted.add('rules')
@@ -128,6 +143,10 @@ const LABELS = ['chat', 'tech-question', 'task']
 export const register: Register = (on, options) => {
   const limits = { haiku: Number(options.haikuUpTo ?? 100000), sonnet: Number(options.sonnetUpTo ?? 50000) }
   const hinted = new Set<string>()
+  // A survey the model answered by cloning and reading every repo itself ran in V3 and V6 despite the note, so the note is enforced:
+  // until an explore agent has been spawned, the main session's clone or raw-file fetch is refused. It gives way after 2 refusals.
+  let gated = false
+  let refused = 0
   // The main session's context at its last request (input, cache read and cache write), and the model
   // each question's turn was moved to. Module state: a reload clears it, and nothing switches until
   // the next main request reports its size.
@@ -158,6 +177,7 @@ export const register: Register = (on, options) => {
   // Set it here from the table, only where the caller named none and only for the cheap rows.
   const CHEAP = new Map(ROUTES.filter(r => r.model === 'haiku' || r.model === 'sonnet').map(r => [r.agent, r.model]))
   on('agent.spawn', (_, e, next) => {
+    if (e.subagentType === A('explore')) gated = false
     const model = CHEAP.get(e.subagentType)
     return next(model && !e.model && !e.fork ? { ...e, model } : e)
   })
@@ -171,7 +191,19 @@ export const register: Register = (on, options) => {
   on('prompt.submit', ($, e, next) => {
     // Slash commands and prompts the person did not type carry their own instructions.
     if (e.command || e.isMeta) return next(e)
+    gated = isSurvey(e.text)
+    refused = 0
     const note = routeNote(e.text, hinted)
     return next(note ? { ...e, context: [...(e.context ?? []), note] } : e)
+  })
+  // Subagent calls carry an agentId; the main session's do not.
+  const DENY = 'auto-route: this is a survey of several repos. Spawn up to 3 `auto-route:explore` agents now, in one message, with model "haiku" and the repo URLs (group small repos); they clone and read, you do not. Then continue with work that does not need their reports.'
+  on('tool.call', { tool: 'Bash' }, ($, e, next) => {
+    if (!gated || e.agentId || !readsRepo(e.command) || ++refused > 2) return next(e)
+    return { deny: DENY }
+  })
+  on('tool.call', { tool: 'WebFetch' }, ($, e, next) => {
+    if (!gated || e.agentId || !readsRepo(String(e.url)) || ++refused > 2) return next(e)
+    return { deny: DENY }
   })
 }
