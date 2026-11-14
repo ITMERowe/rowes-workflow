@@ -34,12 +34,14 @@ Each plugin works alone, so install just one if you like. From a terminal, run t
 | What it does | Sends each job to the cheapest model that can do it | Shows every agent live, as a pixel crab in a tavern |
 | You get | Haiku for search, Sonnet for edits, Opus for risky work | A band above the prompt, plus a crew panel (`/agents-info`) |
 
-**How auto-route saves money**
-- **Reading goes to Haiku.** A survey of many repositories runs in Haiku agents that return short, cited reports, so the main session never carries the bulk.
-- **A hook enforces it.** The main session's own clone of a repository is refused until the reading agents have been spawned.
-- **One set of rules from the plugin.** Ship a check that can fail, pick the lightest stack, count instead of estimating, keep AI notes out of the repo. Nothing depends on your own `CLAUDE.md`.
+**Why it works**
+- **Reading goes to Haiku, and a hook makes sure of it.** As a prompt rule, delegation happened in 2 of 4 runs. With the hook, 3 of 3.
+- **Short, cited reports.** Agents read in few calls and return terse `file:line` facts, so the main context stays small.
+- **The workflow rules ship with the plugin.** Ship a check that can fail, pick the lightest stack, no dependency chasing, count instead of estimating. Nothing depends on your own `CLAUDE.md`.
 
-**What the test built.** The same brief produced a 13-page static portfolio where every engineering decision cites a file and a line, against a single page rendered by JavaScript. Quality scored 32 out of 35 against 25, by the author's rubric: see the [benchmark](docs/BENCHMARK.md).
+**What it built.** The same brief gave a 13-page static portfolio where every engineering decision cites a file and a line, against one page rendered by JavaScript: 32 out of 35 on the author's rubric, against 25.
+
+**Straight talk.** One build per setup, one web task, and near-identical runs varied by about 30%. About two thirds of any bill is your starting context, so trimming plugins you do not use saves more than any router. CLI, mobile, backend and Opus-as-main are untested. [Full method and limits →](docs/BENCHMARK.md)
 
 ## auto-route
 
