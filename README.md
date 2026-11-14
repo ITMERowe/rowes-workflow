@@ -9,7 +9,7 @@
 | What it does | Sends each job to the cheapest model that can do it | Shows every agent live, as a pixel crab in a tavern |
 | You get | Haiku for search, Sonnet for edits, Opus for risky work | A band above the prompt, plus a crew panel (`/agents-info`) |
 
-> **Same job, 20% cheaper, a better result.** Building a 7-repository portfolio site, auto-route cost **$0.89 against $1.11** for plain Claude Code, read **a third fewer tokens**, and shipped a 13-page static site where every engineering decision cites its file and line. [See the numbers](#status-v7-baseline).
+> **Agents do not cost what they write. They cost what they re-read.** In a full build, 98% of the tokens processed were cached context read or written again on every call, not new output. auto-route cuts that bill by sending the reading to Haiku, and it *enforces* it with a hook, because a prompt rule alone was followed in only 2 of 4 runs. Same job, same model: **$0.89 against $1.11**, a third fewer tokens read. [See the numbers](#status-v7-baseline).
 
 ## Status: v7 baseline
 
@@ -21,14 +21,14 @@ auto-route 0.5.9 and Hideout 3.0.6 are the **v7 baseline**. Behavior stays as it
 |---|---|---|---|
 | Cost | $1.11 | **$0.89** | **20% less** |
 | Tokens read from cache | 3.0M | **2.0M** | **a third fewer** |
-| Site built | 1 page, 25 KB of JavaScript | **13 pages, 0 KB of JavaScript** | static, indexable |
+| Site built | 1 page, content rendered by JavaScript | **13 static pages** | indexable, no JavaScript needed to read it |
 | Decisions citing `file:line` | 0 | **all of them** | checkable |
 | Quality (my rubric, out of 35) | 25 | **32** | +7 points |
 
 Quality was scored on verifiable facts, coverage, SEO, checks, design, performance and docs. Seven versions of the setup were run; the six before v7 cost between $0.97 and $1.42, and one earlier run that put the explore agents on the wrong model cost $2.47 (fixed since).
 
 **What produced it.**
-- Reading many repos goes to Haiku agents. A gate refuses the main session's own clone or repo-file fetch on a multi-repo survey until an explore agent has been spawned.
+- Reading many repos goes to Haiku agents. A gate refuses the main session's own clone or repo-file fetch on a multi-repo survey until an explore agent has been spawned. As a prompt rule this was followed in 2 of 4 runs; with the gate, 3 of 3.
 - Those agents read in few calls and return short, terse reports with `file:line` evidence.
 - The workflow rules ship with auto-route: ship a check that can fail, pick the lightest stack, no dependency chasing, count instead of estimating.
 
