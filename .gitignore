@@ -9,3 +9,8 @@ tavern-iso-preview.html
 bench/
 real test/
 node_modules/
+bench-portable.zip
+bench-results/
+test-results/
+coverage/
+Screenshot *.png
