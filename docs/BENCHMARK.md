@@ -65,16 +65,23 @@ An earlier run of 0.5.4 cost $2.47 (section 5, D1). Run 5 built six projects: th
 
 ### 4.2 Quality
 
-| Run | F | C | S | K | D | P | R | **Total** |
-|---|---|---|---|---|---|---|---|---|
-| Plain | 3 | 4 | 2 | 5 | 3 | 5 | 3 | **25** |
-| 1 | 4 | 4 | 4 | 3 | 4 | 5 | 4 | **28** |
-| 2 | 5 | 5 | 4 | 3 | 4 | 4 | 5 | **30** |
-| 3 | 4 | 4 | 4 | 4 | 4 | 5 | 4 | **29** |
-| 4 | 5 | 5 | 2 | 5 | 5 | 3 | 5 | **30** |
-| 5 | 5 | 5 | 4 | 3 | 4 | 5 | 5 | **31** |
-| 6 | not scored (files not kept) | | | | | | | |
-| **7** | 4 | 5 | 5 | 4 | 4 | 5 | 5 | **32** |
+<table>
+<thead>
+<tr><th align="left">Run</th><th>F</th><th>C</th><th>S</th><th>K</th><th>D</th><th>P</th><th>R</th><th>Total</th></tr>
+</thead>
+<tbody>
+<tr><td align="left">Plain</td><td align="center">3</td><td align="center">4</td><td align="center">2</td><td align="center">5</td><td align="center">3</td><td align="center">5</td><td align="center">3</td><td align="center"><b>25</b></td></tr>
+<tr><td align="left">1</td><td align="center">4</td><td align="center">4</td><td align="center">4</td><td align="center">3</td><td align="center">4</td><td align="center">5</td><td align="center">4</td><td align="center"><b>28</b></td></tr>
+<tr><td align="left">2</td><td align="center">5</td><td align="center">5</td><td align="center">4</td><td align="center">3</td><td align="center">4</td><td align="center">4</td><td align="center">5</td><td align="center"><b>30</b></td></tr>
+<tr><td align="left">3</td><td align="center">4</td><td align="center">4</td><td align="center">4</td><td align="center">4</td><td align="center">4</td><td align="center">5</td><td align="center">4</td><td align="center"><b>29</b></td></tr>
+<tr><td align="left">4</td><td align="center">5</td><td align="center">5</td><td align="center">2</td><td align="center">5</td><td align="center">5</td><td align="center">3</td><td align="center">5</td><td align="center"><b>30</b></td></tr>
+<tr><td align="left">5</td><td align="center">5</td><td align="center">5</td><td align="center">4</td><td align="center">3</td><td align="center">4</td><td align="center">5</td><td align="center">5</td><td align="center"><b>31</b></td></tr>
+<tr><td align="left">6</td><td colspan="8" align="center"><em>not scored (files not kept)</em></td></tr>
+<tr><td align="left"><b>7</b></td><td align="center"><b>4</b></td><td align="center"><b>5</b></td><td align="center"><b>5</b></td><td align="center"><b>4</b></td><td align="center"><b>4</b></td><td align="center"><b>5</b></td><td align="center"><b>5</b></td><td align="center"><b>32</b></td></tr>
+</tbody>
+</table>
+
+<sub>F facts · C coverage · S SEO and static delivery · K checks · D design · P performance · R docs and honesty. Each 1–5; criteria in section 3.4.</sub>
 
 Spot checks: run 7's counts (9,145 source lines, 106 commits, 655 lines of `i18n.ts`) and cited lines (`ARCHITECTURE.md:66, 84, 85`) were correct; one imprecision (13 end-to-end "tests" counted files including two helpers, 11 suites). Run 3 miscounted the same suites as 10. Cited lines were spot-checked for runs 4, 5 and 7 and were correct in the sample; the references in run 2 were not checked.
 
