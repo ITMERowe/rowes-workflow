@@ -16,3 +16,6 @@ coverage/
 Screenshot *.png
 *.test.ts
 *.test.tsx
+docs/hideout-tavern-plan.md
+tsconfig.json
+plugins/hideout/types/
