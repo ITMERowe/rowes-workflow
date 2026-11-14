@@ -748,6 +748,9 @@ const COSTUMES: Record<string, (f: Fill) => void> = {
 // the Pathfinder, an editor the Martial Artist, a reviewer the Stormweaver; any other agent dresses
 // for the task its description names, else for the model it runs on (Fable Chronomancer, Opus
 // Martial Artist, Sonnet Gladiator, Haiku Ritualist), else as the Exile.
+// auto-route's late-phase agents. Placeholder costumes drawn at random until the Path of Exile ones are made:
+// change a value here to dress an agent as another class.
+export const LATE_COSTUMES: Record<string, string> = { inspector: 'heavy', packager: 'careful', documenter: 'other' }
 const costumeOf = (a: AgentRun): string => {
   const tier = tierOf(a.type)
   if (tier !== 'other') return tier
@@ -755,6 +758,8 @@ const costumeOf = (a: AgentRun): string => {
   if (bare === 'explore' || bare === 'searcher') return 'explore'
   if (bare === 'reviewer') return 'heavy'
   if (bare === 'editor') return 'careful'
+  const late = LATE_COSTUMES[bare]
+  if (late) return late
   const task = `${bare} ${a.description}`.toLowerCase()
   if (/\b(search|locat|explor|scout|find)/.test(task)) return 'explore'
   if (/\b(review|audit|council|critic|verif)/.test(task)) return 'heavy'

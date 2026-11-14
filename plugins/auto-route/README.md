@@ -16,6 +16,8 @@ A model-routing plugin for Claude Code. It works on its own: no other plugin is 
 | Broad sweep across many files, or inspecting a GitHub profile or repos before a build; one subagent per repo, facts with quoted lines | `auto-route:explore` | haiku |
 | Run build, lint, typecheck or tests; report pass or fail with the error lines | `auto-route:verifier` | haiku |
 | Verify a finished long build end to end in a fresh context: build, required checks, packaged app, UI review | `auto-route:inspector` | sonnet |
+| Package a working build: installer, portable build, archive, install and uninstall check | `auto-route:packager` | sonnet |
+| Write or update the README, architecture notes, CHANGELOG and HANDOFF from the code | `auto-route:documenter` | sonnet |
 | Bounded edit: rename, known-cause bug, boilerplate, tests | `auto-route:editor` | sonnet |
 | Anything else | main session | session model |
 
@@ -85,6 +87,8 @@ Use `/usage` and compare two fresh sessions on the same job:
 4. Compare. A win shows as a Haiku or Sonnet row taking tokens that Opus took before, and a lower total cost.
 
 Run each side two or three times: one run is noisy. For a scripted version, run `claude -p "<job>" --output-format json` and read `total_cost_usd` and `modelUsage` from the result.
+
+**Late phases.** Past about 150k tokens of main context every call re-reads all of it, so packaging, end-to-end checks and documentation are refused in the main session until `packager`, `inspector` or `documenter` has been spawned for them. The refusal gives way after two tries. Below that size nothing changes.
 
 ## Trim your starting context
 

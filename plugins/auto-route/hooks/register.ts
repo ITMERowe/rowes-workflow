@@ -18,6 +18,8 @@ export const ROUTES: Route[] = [
   { agent: A('explore'), model: 'haiku', work: 'Broad sweep across many files, conclusion only', test: /\b(map (the|this|our) (repo|codebase|project)|overview of (the|this) (code|repo|codebase)|how does .{0,40} work|sweep|everywhere (we|it|that)|read through (the )?(repo|code|codebase|project)|get (to know|familiar with) (the )?(repo|code|codebase|project)|trace (the )?(flow|path|call)|compare (the |these |those )?(repos|projects|codebases))\b|github\.com\/[\w-]+|\b(inspect|analy[sz]e|survey|examine|investigate)\b.{0,50}\b(repos?|repositor(y|ies)|profile|codebase)\b/i },
   { agent: A('verifier'), model: 'haiku', work: 'Run a long build, lint, typecheck or test suite and report pass or fail with the error lines', test: /\b(run|rerun|re-run) (the |all |our )?(unit |e2e |integration )?(tests?|test suite|build|lint(ing)?|type-?check(ing)?|checks?)\b|\bverify (the |that )?(build|tests?)\b/i },
   { agent: A('inspector'), model: 'sonnet', work: 'Verify a finished build end to end in a fresh context: build, required checks, packaged app, UI review', test: /\b(verify|inspect|check|review) (the )?(finished|packaged|built|final|whole) (app|build|exe|installer|ui|gui|project)\b/i },
+  { agent: A('packager'), model: 'sonnet', work: 'Package a working build: installer, portable build, archive, and an install and uninstall check', test: /\b(build|make|create|produce|package) (the |an? )?(installer|distributable|setup|msi|portable|exe)\b|\bpackag(e|ing) (the )?(app|build|project)\b/i },
+  { agent: A('documenter'), model: 'sonnet', work: 'Write or update the README, architecture notes, CHANGELOG entry and HANDOFF from the code', test: /\b(write|update|refresh|draft|add) (the )?(readme|docs|documentation|architecture (doc|notes)|changelog|handoff)\b/i },
   { agent: A('editor'), model: 'sonnet', work: 'Bounded edit with clear spec: rename, known-cause bug, boilerplate, tests', test: /\b(rename|typo|boilerplate|bump (the )?version|add (a |the )?tests?|write tests?|swap .{0,30} for|update (the )?(readme|docs|comments?|changelog)|fix (the )?(lint|formatting|imports?)|convert .{0,30} to|scaffold|add (a |the )?(field|prop|param(eter)?|import|route|page|component))\b/i },
 ]
 
@@ -42,7 +44,7 @@ ${ROUTES.map(r => `| ${r.work} | \`${r.agent}\` | ${r.model} |`).join('\n')}
 // The standing part in the system prompt: a session that never delegates pays for these few lines, not the table.
 // The full RULES ride along once, with the first note that names a routing row.
 export const RULES_LITE = `## Routing (auto-route)
-Standing request from the user: use the \`auto-route:*\` subagents when a task matches: searcher, explore, reader (haiku) for finding and reading; editor (sonnet) for bounded edits; verifier (haiku) for long build or test output, inspector (sonnet) for the end-to-end check of a finished long build, always passing the row's model as the Agent \`model\`; heavy, reviewer (opus) for hard or risky work. Delegate only when it saves context or money, or needs a stronger model; a job under ~20k tokens of reading or output stays here, and bigger reads go to subagents in parallel; a survey of two or more repos always does, whatever its size. The full table comes with the first prompt note that names a row.`
+Standing request from the user: use the \`auto-route:*\` subagents when a task matches: searcher, explore, reader (haiku) for finding and reading; editor (sonnet) for bounded edits; verifier (haiku) for long build or test output, inspector, packager and documenter (sonnet) for the late phases of a long build (end-to-end checks, packaging, docs, CHANGELOG, HANDOFF), always passing the row's model as the Agent \`model\`; heavy, reviewer (opus) for hard or risky work. Delegate only when it saves context or money, or needs a stronger model; a job under ~20k tokens of reading or output stays here, and bigger reads go to subagents in parallel; a survey of two or more repos always does, whatever its size. The full table comes with the first prompt note that names a row.`
 
 // A prompt that only asks to read something: a link or a guide, post or doc, and no word that changes code.
 const READ_VERB = /\b(read|summari[sz]e|tl;?dr|skim|explain|what does|what's in|go through|check out|look at)\b/i
@@ -115,6 +117,26 @@ export const readsRepo = (command: string): boolean => CLONE.test(command)
 
 const READ_ONLY_ROWS = new Set([A('searcher'), A('explore'), A('reader')])
 
+// Late phases. Once the main context is large every call re-reads all of it, so work that is isolated and has a checkable end
+// (packaging, end-to-end verification, documentation) is refused in the main session and handed to an agent that starts small.
+export const LATE_CONTEXT = 150000
+const PACKAGING = /\b(dotnet publish|\.msi\b|wix|inno ?setup|iscc|iexpress|makensis|nsis|pyinstaller|electron-builder|electron-packager|jpackage|cpack|dpkg-deb|rpmbuild|pkgbuild|productbuild|makeappx|msix|flutter build|tauri build|Compress-Archive|gradlew? +(assemble|bundle|installDist|distZip)|npm run (package|dist|make))\b/i
+const VERIFY = /\b(dotnet test|npm (run )?(test|verify|e2e)|pnpm (run )?(test|verify)|yarn (run )?(test|verify)|npx (vitest|jest|playwright)|vitest|jest|pytest|go test|cargo test|gradlew? +(test|check)|mvn +(verify|test)|ctest|make +(test|check)|phpunit|rspec|flutter test)\b|\b(verify|smoke|e2e)[-_a-z0-9]*\.(ps1|sh|py|mjs|js|cmd)\b/i
+const DOCS = /(^|[\\/])(README|ARCHITECTURE|CONTRIBUTING|USAGE|INSTALL|CHANGELOG|HANDOFF)\.md$|(^|[\\/])docs[\\/].+\.md$/i
+
+/** The late-phase agent a shell command belongs to, if any. */
+export const phaseOfCommand = (command: string): string | undefined =>
+  PACKAGING.test(command) ? A('packager') : VERIFY.test(command) ? A('inspector') : undefined
+
+/** True for a documentation path the documenter owns. */
+export const isDocPath = (path: string): boolean => DOCS.test(path)
+
+const PHASE_WHAT: Record<string, string> = {
+  [A('packager')]: 'the packaging and its install and uninstall check',
+  [A('inspector')]: 'the end-to-end checks and UI review',
+  [A('documenter')]: 'the README, architecture notes, CHANGELOG and HANDOFF',
+}
+
 /** The routing note for one prompt, or undefined when nothing fits. */
 export const routeNote = (text: string, hinted: Set<string> = new Set()): string | undefined => {
   const lines: string[] = []
@@ -150,6 +172,9 @@ export const register: Register = (on, options) => {
   // until an explore agent has been spawned, the main session's clone or raw-file fetch is refused. It gives way after 2 refusals.
   let gated = false
   let refused = 0
+  // Late-phase agents spawned this session, and how often each one's work was refused in the main session (it gives way after 2).
+  const lifted = new Set<string>()
+  const lateRefused = new Map<string, number>()
   // The main session's context at its last request (input, cache read and cache write), and the model
   // each question's turn was moved to. Module state: a reload clears it, and nothing switches until
   // the next main request reports its size.
@@ -181,6 +206,7 @@ export const register: Register = (on, options) => {
   const CHEAP = new Map(ROUTES.filter(r => r.model === 'haiku' || r.model === 'sonnet').map(r => [r.agent, r.model]))
   on('agent.spawn', (_, e, next) => {
     if (e.subagentType === A('explore')) gated = false
+    if (e.subagentType in PHASE_WHAT) lifted.add(e.subagentType)
     const model = CHEAP.get(e.subagentType)
     return next(model && !e.model && !e.fork ? { ...e, model } : e)
   })
@@ -209,4 +235,18 @@ export const register: Register = (on, options) => {
     if (!gated || e.agentId || !readsRepo(String(e.url)) || ++refused > 2) return next(e)
     return { deny: DENY }
   })
+
+  // The main session's late phases: past LATE_CONTEXT tokens, packaging, end-to-end checks and documentation go to an agent in a fresh context.
+  // Refused until that agent type has been spawned, and the refusal gives way after 2 so it can never trap the model.
+  const lateDeny = (agent: string | undefined): { deny: string } | undefined => {
+    if (!agent || context < LATE_CONTEXT || lifted.has(agent)) return undefined
+    const n = (lateRefused.get(agent) ?? 0) + 1
+    lateRefused.set(agent, n)
+    if (n > 2) return undefined
+    return { deny: `auto-route: the main context is ${Math.round(context / 1000)}k tokens and every call re-reads all of it. Hand ${PHASE_WHAT[agent]} to \`${agent}\`: brief it with the project folder, the commands, the requirements and what is done when it passes. It runs in a fresh context and reports; you fix what it reports and ask again only for what changed.` }
+  }
+  for (const tool of ['Bash', 'PowerShell'] as const)
+    on('tool.call', { tool }, ($, e, next) => (e.agentId ? next(e) : lateDeny(phaseOfCommand(String(e.command))) ?? next(e)))
+  for (const tool of ['Write', 'Edit'] as const)
+    on('tool.call', { tool }, ($, e, next) => (e.agentId || !isDocPath(String(e.file_path)) ? next(e) : lateDeny(A('documenter')) ?? next(e)))
 }
