@@ -1,6 +1,6 @@
 ---
 name: explore
-description: Read-only search agent on a cheap model, for broad fan-out searches — when answering means sweeping many files, directories, or naming conventions and you only need the conclusion, not the file dumps. Locates code; does not review or audit it. Say how broad: "medium" or "very thorough".
+description: Read-only search agent on a cheap model, for broad fan-out searches — when answering means sweeping many files, directories, or naming conventions and you only need the conclusion, not the file dumps. Locates code; does not review or audit it. Say how broad it should be (medium or very thorough).
 model: haiku
 effort: low
 tools: Read, Grep, Glob, Bash
