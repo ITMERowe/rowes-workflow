@@ -1,4 +1,5 @@
-// SessionStart: puts rules/adhd.md into the session's context, replacing the i-have-adhd plugin.
+// SessionStart: puts rules/adhd.md and rules/workflow.md (skills and voice, answer ownership, repo hygiene) into the session's context,
+// replacing the i-have-adhd plugin and the CLAUDE.md the seed used to copy.
 // The word-level rules (terse, 5 lines) are left out when the caveman plugin is on: it already says the same, and a repeat only costs input tokens.
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -17,5 +18,5 @@ const cavemanOn = () => {
   }
 }
 
-const text = read('adhd.md') + (cavemanOn() ? '' : '\n' + read('adhd-words.md'))
+const text = [read('adhd.md'), cavemanOn() ? '' : read('adhd-words.md'), read('workflow.md')].filter(Boolean).join('\n')
 console.log(JSON.stringify({ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: text } }))

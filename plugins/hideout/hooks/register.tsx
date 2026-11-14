@@ -37,7 +37,7 @@ const cleanWindows = (list: readonly UsageWindow[]): UsageWindow[] =>
     .sort((a, b) => (WINDOW_ORDER[a.kind] ?? 9) - (WINDOW_ORDER[b.kind] ?? 9))
 
 // Background subagents with no model of their own run on a cheap one. Types that pin their
-// own model (searcher, reader, editor, reviewer, savvy-*, auto-route:*) and forks keep theirs.
+// own model (searcher, reader, editor, reviewer, savvy-*) and forks keep theirs. auto-route:* is skipped here because auto-route's own agent.spawn hook sets its model.
 const PINNED = new Set(['searcher', 'reader', 'editor', 'reviewer'])
 function routeModel<T extends { background: boolean; fork: boolean; model?: string; subagentType: string; parentModel: string }>(e: T): T {
   if (!e.background || e.fork || e.model || PINNED.has(e.subagentType) || /^(savvy-|auto-route:)/.test(e.subagentType)) return e
@@ -58,6 +58,8 @@ export const HOUSE_RULES = `## Code changes
 - Before the first code edit in a session, invoke the ponytail:ponytail skill; follow it for every change.
 - Once per task, when its code changes are done (not after each edit), add an entry at the top of CHANGELOG.md at the repo root (create it if missing): today's date, then each changed file and section with one line on what and why. In chat, link the entry instead of repeating it.
 - In the same pass, update HANDOFF.md at the repo root (create it if missing): what changed and what is left, and delete anything no longer true or relevant. Write both in one edit each.
+- For multi-step work, report through the mcp__hideout__progress tool when it is available (title, phase, tasks, done): update it as each step finishes and set finished at the end. Run long jobs as background tasks or subagents so they show in the agents panel.
+- Pick the lightest stack the task needs: the platform first, zero runtime dependencies, and a framework only when the task needs client-side state. A content site is static pages, not a single-page app.
 - Use dependency versions that install and build cleanly. Do not upgrade packages or chase audit advisories unless the task asks or the build fails; note a known advisory in the handoff instead.
 - When a tool can batch steps (for example browser_batch: navigate, resize, screenshot), send them in one call instead of one call per step.`
 

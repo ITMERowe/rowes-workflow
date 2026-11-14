@@ -1,5 +1,5 @@
-# Installs the plugins in plugins.txt and prints the CLAUDE.md snippet.
-# It never edits CLAUDE.md: paste the snippet yourself.
+# Installs the plugins in plugins.txt.
+# It never edits CLAUDE.md: the plugins inject their own rules.
 
 if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
   Write-Error 'claude is not on PATH: install Claude Code first'
@@ -15,7 +15,4 @@ foreach ($line in Get-Content (Join-Path $PSScriptRoot 'plugins.txt')) {
 }
 
 Write-Host ''
-Write-Host 'Paste this into ~/.claude/CLAUDE.md, then run /reload-plugins:'
-Write-Host '------------------------------------------------------------'
-Get-Content (Join-Path $PSScriptRoot 'CLAUDE.md.snippet') -Raw | Write-Host
-Write-Host '------------------------------------------------------------'
+Write-Host 'Done. Run /reload-plugins in Claude Code.'

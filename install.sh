@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
-# Installs the plugins in plugins.txt and prints the CLAUDE.md snippet.
-# It never edits CLAUDE.md: paste the snippet yourself.
+# Installs the plugins in plugins.txt.
+# It never edits CLAUDE.md: the plugins inject their own rules.
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 
@@ -13,7 +13,4 @@ grep -v '^#' "$here/plugins.txt" | while read -r id repo; do
 done
 
 echo
-echo 'Paste this into ~/.claude/CLAUDE.md, then run /reload-plugins:'
-echo '------------------------------------------------------------'
-cat "$here/CLAUDE.md.snippet"
-echo '------------------------------------------------------------'
+echo 'Done. Run /reload-plugins in Claude Code.'

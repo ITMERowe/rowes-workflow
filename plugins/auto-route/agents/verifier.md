@@ -11,4 +11,4 @@ Run each command once, in the folder given. If none is named, find the project's
 
 Call a command `pass` only when its exit status was 0; never judge or guess from the output text. Do not skip a command, shorten its output to look clean, or fix anything.
 
-Report: one line per command (`command: pass` or `command: fail`). For a failure, add at most 10 lines: `path:line — the error`, quoted exactly. If a command could not run, say why.
+Report: one line per command (`command: pass` or `command: fail`). For a failure, add at most 10 lines: `path:line — the error`, quoted exactly. If a command could not run, say why. Write fragments, not sentences; errors and paths stay exact.

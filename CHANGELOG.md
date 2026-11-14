@@ -3,10 +3,20 @@
 Code changes, newest first: each file and section, what changed and why.
 
 ## 2026-11-14 (uncommitted)
+### auto-route 0.5.6: smaller recon reports, verifier only for long output
+- `plugins/auto-route/agents/explore.md`: reports are one terse `path:line — fact` per line, at most 40 lines unless the brief sets another cap (was 15 rows, which briefs overrode with 70). `hooks/register.ts` (survey note): briefs carry the same 40-line cap. Why: V4 ran on Haiku correctly ($1.31, Sonnet 94% / Haiku 6%) but the three recon reports came back as about 122k characters (roughly 25-30k tokens) and sat in the main context for the other ~25 calls, about $0.2 of cache writes and reads.
+- Same file (survey note, verifier row): the main session runs lint, type, test and build itself in one batched command and uses `auto-route:verifier` only for a long suite (over ~3k tokens of output); never poll with sleep. Why: V4 delegated a short check to the verifier (13 Haiku calls), polled with `sleep 60`, then reran lint itself, so delegation added calls and saved nothing.
+- `plugins/auto-route/agents/explore.md`, `verifier.md`: reports are written as terse fragments (filler dropped; paths, numbers, quotes and negations exact). Why: subagents do not receive the caveman and ADHD session rules, and their reports stay in the main context for every later call.
+- `.claude-plugin/plugin.json` 0.5.6.
+- `plugins/auto-route/rules/workflow.md` (new), `hooks/adhd.mjs`: the session now injects workflow rules (skills vs voice, who owns what in an answer, repo hygiene) from the plugin. `hooks/seed.mjs` no longer copies `seed/CLAUDE.md` (file removed); it only seeds the Explore agent. `README.md` (both): updated. Why: rules that lived in a copied or hand-edited `~/.claude/CLAUDE.md` skipped any user who already had one, so results depended on the device. Hideout `HOUSE_RULES` also carries the progress-tool and background-jobs rules. `CLAUDE.md.snippet` removed; `install.sh`, `install.ps1` and the root `README.md` no longer ask users to paste rules.
+
 ### auto-route 0.5.5: Haiku rows actually run on Haiku
 - `plugins/auto-route/hooks/register.ts` (new `agent.spawn` hook): a spawn of a Haiku or Sonnet row (`auto-route:explore`, `reader`, `searcher`, `verifier`, `editor`) with no model named, and not a fork, gets the table's model. Why: the V4 run launched 5 background `auto-route:explore` agents on Sonnet (usage: Sonnet 100%, explore 48% of the limit, $2.47). A plugin agent's own `model:` is not applied to a background run, and hideout's `routeModel` deliberately skips `auto-route:*` on the assumption that it is. V2 only got Haiku because the main session passed `model: haiku` by hand.
 - Same file: `RULES_LITE` says to pass the row's model as the Agent `model`; the survey note allows at most 3 subagents (group small repos). Why: backstop for the hook, and 5 cold starts cost more than 3.
 - `plugins/auto-route/hooks/route.test.ts`, `.claude-plugin/plugin.json` (0.5.5): spawn test (explore and verifier get haiku, editor sonnet, heavy untouched, an explicit model or a fork left alone).
+
+### hideout 3.0.3: stack choice rule
+- `plugins/hideout/hooks/register.tsx` (`HOUSE_RULES`): pick the lightest stack the task needs (platform first, zero runtime dependencies, a framework only for client-side state; a content site is static pages). `routeModel` comment now says auto-route sets its own agents' model. `.claude-plugin/plugin.json` 3.0.3. Why: V4 built a React single-page app (170 KB JS, one HTML page, +1188 lines) for a static portfolio where V3 shipped Astro with 0 KB JS in +657 lines; ponytail loaded and did not steer the stack.
 
 ### hideout 3.0.2: two more house rules
 - `plugins/hideout/hooks/register.tsx` (`HOUSE_RULES`): no dependency upgrades or audit chasing unless the task asks or the build fails; batch tool steps (browser_batch) in one call. `.claude-plugin/plugin.json` 3.0.2. Why: V2 spent 5 calls upgrading Astro and running npm audit, and 6 calls on one-step browser actions; at about 85k context each call re-reads about $0.02.

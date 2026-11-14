@@ -36,7 +36,7 @@ Every session gets a routing table, and every prompt gets a hidden note naming t
 
 - **Cheap questions.** Plain questions run on Haiku and technical ones on Sonnet, only while that actually saves money.
 - **Opus on call.** `/advisor opus` makes Claude ask Opus at the hard moments, not run on it all day.
-- **Your setup, restored.** It copies your `CLAUDE.md` and `Explore` agent into `~/.claude` if missing, and adds short ADHD-friendly answer rules.
+- **Same rules everywhere.** It injects short ADHD-friendly answer rules and workflow rules (skills and voice, repo hygiene) each session, and copies an `Explore` agent into `~/.claude` if missing. Nothing depends on your own `CLAUDE.md`.
 
 [Change the routing →](plugins/auto-route/README.md)
 
@@ -56,7 +56,7 @@ Every session gets a routing table, and every prompt gets a hidden note naming t
 git clone https://github.com/ITMERowe/exiles && cd exiles && sh install.sh
 ```
 
-On Windows, run `./install.ps1` instead. Paste the snippet it prints into `~/.claude/CLAUDE.md`, then run `/reload-plugins`.
+On Windows, run `./install.ps1` instead, then run `/reload-plugins`. The plugins inject their own rules, so there is nothing to paste into `CLAUDE.md`.
 
 It also installs ponytail (smallest-change code), caveman (terse replies), superpowers (process skills) and savvy-flow (a planner). To skip one, remove its line from [`plugins.txt`](plugins.txt) first.
 

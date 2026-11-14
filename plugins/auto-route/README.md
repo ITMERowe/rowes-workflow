@@ -36,7 +36,7 @@ After a reload nothing switches until the main session makes one request, becaus
 
 Two hooks in `hooks/seed.json` run each time a session starts:
 
-- **Seed.** `hooks/seed.mjs` copies `seed/CLAUDE.md` and `seed/agents/Explore.md` into `~/.claude`, but only when those files are missing. A fresh install gets your global instructions and `Explore` agent back, and later edits in `~/.claude` are never overwritten. Edit the files in `seed/` to change what a new machine gets.
+- **Seed.** `hooks/seed.mjs` copies `seed/agents/Explore.md` into `~/.claude`, but only when it is missing; later edits are never overwritten. Rules are not copied into a `CLAUDE.md`: `hooks/adhd.mjs` injects `rules/adhd.md` and `rules/workflow.md` (skills and voice, answer ownership, repo hygiene) every session, so every machine gets the same behavior. If your own `CLAUDE.md` repeats those sections, delete them to avoid paying for them twice.
 - **ADHD rules.** `hooks/adhd.mjs` adds `rules/adhd.md` to the session: the answer or next action first, numbered steps for real multi-step work, one next action at the end, and terse wording (short sentences, no filler, code and errors exact). Say "stop adhd mode" to turn it off for the session.
 
 ## Install
