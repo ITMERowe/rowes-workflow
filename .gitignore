@@ -5,3 +5,7 @@ HANDOFF.md
 crabs-preview.html
 tavern-iso-gen.mjs
 tavern-iso-preview.html
+
+bench/
+real test/
+node_modules/
