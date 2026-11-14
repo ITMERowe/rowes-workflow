@@ -6,7 +6,7 @@ Two Claude Code plugins that make agent work cheaper and easier to watch. **auto
 
 <p align="center"><img src="docs/crew.svg" alt="The crab crew: Tactician, Pathfinder, Ritualist, Martial Artist, Gladiator, Stormweaver, Chronomancer and Exile, each acting out its job" width="880"></p>
 
-<p align="center"><img src="docs/results.svg" alt="auto-route against plain Claude Code on the same build: cost per build $0.89 against $1.11 (20% less); tokens read from cache 2.0M against 3.0M (a third fewer); runs that delegated the reading 3 of 3 with the enforcing hook against 2 of 4 as a prompt rule" width="880"></p>
+<p align="center"><img src="docs/results.svg" alt="auto-route against plain Claude Code on the same build: cost per build $0.89 against $1.11 (20% less); tokens read from cache 2.0M against 3.0M (a third fewer)" width="620"></p>
 
 > **Agents do not cost what they write. They cost what they re-read.** In a full build, 98% of the tokens processed were cached context read again on every call. auto-route keeps the bulk reading out of that context by sending it to Haiku, and it *enforces* that with a hook, because asking the model to delegate worked only half the time.
 
