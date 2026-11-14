@@ -57,7 +57,9 @@ const PANE = 'hideout-agents'
 export const HOUSE_RULES = `## Code changes
 - Before the first code edit in a session, invoke the ponytail:ponytail skill; follow it for every change.
 - Once per task, when its code changes are done (not after each edit), add an entry at the top of CHANGELOG.md at the repo root (create it if missing): today's date, then each changed file and section with one line on what and why. In chat, link the entry instead of repeating it.
-- In the same pass, update HANDOFF.md at the repo root (create it if missing): what changed and what is left, and delete anything no longer true or relevant. Write both in one edit each.`
+- In the same pass, update HANDOFF.md at the repo root (create it if missing): what changed and what is left, and delete anything no longer true or relevant. Write both in one edit each.
+- Use dependency versions that install and build cleanly. Do not upgrade packages or chase audit advisories unless the task asks or the build fails; note a known advisory in the handoff instead.
+- When a tool can batch steps (for example browser_batch: navigate, resize, screenshot), send them in one call instead of one call per step.`
 
 // shortcut: a desktop row is the code font's line height, about 20 px measured; read it from the surface if one ever reports it.
 export const ROW_PX = 20

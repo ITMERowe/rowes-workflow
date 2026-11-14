@@ -23,7 +23,7 @@ export const ROUTES: Route[] = [
 export const RULES = `## Routing (auto-route)
 Standing request from the user: use the subagents below whenever a task matches a row; do not wait to be told.
 
-Delegate only when it saves context or money, or needs a stronger model. A subagent starts cold, so a job under ~3 tool calls stays here. If an advisor is configured (\`advisorModel\`), ask it before hard work and before declaring done, not an Opus subagent.
+Delegate only when it saves context or money, or needs a stronger model. A subagent starts cold, so a job that reads or returns under ~20k tokens (a few files or commands, looped or not) stays here. If an advisor is configured (\`advisorModel\`), ask it before hard work and before declaring done, not an Opus subagent.
 
 | Work | Agent | Model |
 |---|---|---|
@@ -41,7 +41,7 @@ ${ROUTES.map(r => `| ${r.work} | \`${r.agent}\` | ${r.model} |`).join('\n')}
 // The standing part in the system prompt: a session that never delegates pays for these few lines, not the table.
 // The full RULES ride along once, with the first note that names a routing row.
 export const RULES_LITE = `## Routing (auto-route)
-Standing request from the user: use the \`auto-route:*\` subagents when a task matches: searcher, explore, reader (haiku) for finding and reading; editor (sonnet) for bounded edits; verifier (haiku) for running builds and tests; heavy, reviewer (opus) for hard or risky work. Delegate only when it saves context or money, or needs a stronger model; a job under ~3 tool calls stays here, but reading more than ~3 files, repos or pages goes to subagents in parallel, never inline. The full table comes with the first prompt note that names a row.`
+Standing request from the user: use the \`auto-route:*\` subagents when a task matches: searcher, explore, reader (haiku) for finding and reading; editor (sonnet) for bounded edits; verifier (haiku) for running builds and tests; heavy, reviewer (opus) for hard or risky work. Delegate only when it saves context or money, or needs a stronger model; a job under ~20k tokens of reading or output stays here, and bigger reads go to subagents in parallel. The full table comes with the first prompt note that names a row.`
 
 // A prompt that only asks to read something: a link or a guide, post or doc, and no word that changes code.
 const READ_VERB = /\b(read|summari[sz]e|tl;?dr|skim|explain|what does|what's in|go through|check out|look at)\b/i
@@ -94,6 +94,9 @@ export const modelFor = (label: string | undefined, context: number, limits: { h
   return undefined
 }
 
+// A survey of repos or a profile, as opposed to a targeted question about one codebase: only a survey gets the recon checklist.
+const SURVEY = /github\.com\/[\w-]+|\b(inspect|analy[sz]e|survey|examine|investigate)\b.{0,50}\b(repos?|repositor(y|ies)|profile|codebase)\b/i
+
 const READ_ONLY_ROWS = new Set([A('searcher'), A('explore'), A('reader')])
 
 /** The routing note for one prompt, or undefined when nothing fits. */
@@ -102,16 +105,18 @@ export const routeNote = (text: string, hinted: Set<string> = new Set()): string
   const question = isQuestion(text)
   // A question asks about work, not for it: it may still go to a read-only agent, never to one that changes code.
   const r = routeFor(text, question ? ROUTES.filter(x => READ_ONLY_ROWS.has(x.agent)) : ROUTES)
+  const survey = r?.agent === A('explore') && SURVEY.test(text)
   if (r?.agent === A('reader'))
     lines.push('auto-route: this ask only reads a guide, post or link. Hand the reading to the `auto-route:reader` subagent (haiku) with the link or path and what to pull out, then relay its summary. Read it yourself only if it is one short local file.')
   else if (r)
-    lines.push(`auto-route: this ask matches the \`${r.agent}\` row (${r.model}): ${r.work}. Delegate that part unless it fits in ~3 tool calls here.${r.agent === A('explore') ? ' Fan out: one subagent per repo or area, in one message, each returning facts as path plus quoted line with no opinions; you choose and write, and check each claim against its quote. When the build is done, hand lint, type, test and build runs to `auto-route:verifier`; you still read each failure and fix it, and you do not claim done on its word without its exit lines.' : ''}`)
+    lines.push(`auto-route: this ask matches the \`${r.agent}\` row (${r.model}): ${r.work}. ${survey ? '' : ' Delegate that part only if it needs over ~20k tokens of reading.'}${survey ? ' Per repo, gather: purpose; stack with versions; structure with wc -l of the main files; tests (framework, file count); CI; docs; commit count and date range (git rev-list --count, git log); notable decisions with file:line; known limits or hygiene problems; asset paths and sizes. Read it yourself only for a single small repo (under ~50 source files); with two or more repos, or a bigger one, use one subagent per repo, all in one message, briefed with this list and "facts as path:line plus quote, no opinions". Every claim you publish carries a file:line or a command count: count, never estimate. While subagents run, keep working on what does not need their results (set up the project, install, write code that does not depend on them); do not end the turn to wait. Before you finish, recheck about five published numbers against the source in one batched command and fix any mismatch. When the build is done, hand lint, type, test and build runs to `auto-route:verifier`; you still read each failure and fix it, and you do not claim done on its word without its exit lines.' : ''}`)
   // Each skill is hinted once per session, and a plain question gets none: a repeat only adds context tokens.
   if (r && !hinted.has('rules')) {
     hinted.add('rules')
     lines.unshift(RULES)
   }
-  const skills = question ? [] : skillsFor(text).filter(s => !hinted.has(s))
+  // A long brief mentions "errors" or "design" in passing; keyword hints on it load skills the work does not need.
+  const skills = question || text.length > 600 ? [] : skillsFor(text).filter(s => !hinted.has(s))
   skills.forEach(s => hinted.add(s))
   if (skills.length)
     lines.push(`auto-route: skills that match this ask: ${skills.map(s => `\`${s}\``).join(', ')}. Load the first one whose description fits before you start; skip any that do not fit or are not installed.`)
